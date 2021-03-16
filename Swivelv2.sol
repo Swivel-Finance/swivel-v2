@@ -1,40 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-pragma solidity ^0.8.0;
-
-import "ERC20Permit.sol";
- 
- 
- 
-abstract contract Erc20 {
-	function approve(address, uint256) virtual external returns (bool);
-	function transfer(address, uint256) virtual external returns (bool);
-	function balanceOf(address) virtual external returns (uint256);
-	function transferFrom(address, address, uint256) virtual public returns (bool);
-}
-
-abstract contract CErc20 is Erc20 {
-	function mint(uint256) virtual external returns (uint256);
-	function redeem(uint256) virtual external returns (uint256);
-	function redeemUnderlying(uint256) virtual external returns (uint256);
-	function exchangeRateCurrent() virtual external returns (uint256);
-}
-
-contract xToken is ERC20Permit  {
-
-    event Redeemed(address indexed from, uint256 fyDaiIn, uint256 daiOut);
-    
-    event Matured(uint256 maturityTime, uint256 maturityRate);
-
-    uint256 constant internal MAX_TIME_TO_MATURITY = 126144000; // seconds in four years
-    
-    uint256 public maturity;
-    
-    address public underlying;
-    
-    address public admin;
-
-    constructor(
-        //address swivel_,// SPDX-License-Identifier: UNLICENSED
 
 pragma solidity 0.8.0;
 
@@ -551,37 +515,4 @@ contract Swivel {
     require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
     _;
   }
-}
-        uint256 maturity_,
-        address underlying_,
-        string memory name,
-        string memory symbol
-    ) ERC20Permit(name, symbol) {
-        
-        require(maturity_ > block.timestamp && maturity_ < block.timestamp + MAX_TIME_TO_MATURITY, "Invalid maturity");
-        
-        maturity = maturity_;
-        
-        underlying = underlying_;
-        
-        admin = msg.sender;
-    }
-    
-    function burn(address from, uint256 xTokenAmount) public returns (uint256){
-        require(msg.sender == admin);
-        
-        // burn from the imported ERC20Permit
-        _burn(from, xTokenAmount);
-
-        return xTokenAmount;
-    }
-
-
-
-    function mint(address to, uint256 fyDaiAmount) public {
-        require(msg.sender == admin);
-        _mint(to, fyDaiAmount);
-    }
-
-
 }
