@@ -1,40 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-pragma solidity ^0.8.0;
-
-import "ERC20Permit.sol";
- 
- 
- 
-abstract contract Erc20 {
-	function approve(address, uint256) virtual external returns (bool);
-	function transfer(address, uint256) virtual external returns (bool);
-	function balanceOf(address) virtual external returns (uint256);
-	function transferFrom(address, address, uint256) virtual public returns (bool);
-}
-
-abstract contract CErc20 is Erc20 {
-	function mint(uint256) virtual external returns (uint256);
-	function redeem(uint256) virtual external returns (uint256);
-	function redeemUnderlying(uint256) virtual external returns (uint256);
-	function exchangeRateCurrent() virtual external returns (uint256);
-}
-
-contract xToken is ERC20Permit  {
-
-    event Redeemed(address indexed from, uint256 fyDaiIn, uint256 daiOut);
-    
-    event Matured(uint256 maturityTime, uint256 maturityRate);
-
-    uint256 constant internal MAX_TIME_TO_MATURITY = 126144000; // seconds in four years
-    
-    uint256 public maturity;
-    
-    address public underlying;
-    
-    address public admin;
-
-    constructor(
-        //address swivel_,// SPDX-License-Identifier: UNLICENSED
 
 pragma solidity 0.8.0;
 
