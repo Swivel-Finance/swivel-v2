@@ -4,7 +4,8 @@ Fixed-Maturity Markets &amp; Zero-Coupon Bond
 
 ## To Do
 
---Add cToken minting & move xToken transfer/floating position creation to outside the batch function (Saving gas on multiple transfers)
+-- Move cToken minting & move zcToken transfer/floating position creation to outside the batch function (Saving gas when filling multiple orders)
 
+-- Review terminology and settle on final naming for both sides.
 
---Rework key associated with a floating position. Likely include maker/taker key or some variation (similar to current)
+-- Finalize decision on whether payment for interest coupon should be settled immediately or paid in zero-coupon bonds
