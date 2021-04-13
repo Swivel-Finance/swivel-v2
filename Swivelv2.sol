@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: UNLICENSED
-
+pragma experimental ABIEncoderV2;
 pragma solidity 0.8.0;
 
-import './Sig.sol';
-import './HashFixed.sol';
-import './xToken.sol';
-import './FloatingMarket.sol';
+import '../Utils/Sig.sol';
+import '../Utils/Hash.sol';
+import '../Utils/Abstracts.sol';
+import '../zcToken.sol';
+import '../FloatingMarket.sol';
 
 contract Swivel {
+    
+    
+///STRUCTS & VARIABLES   
+    
     // TODO visibility of these...
     string constant public NAME = "Swivel Finance";
     string constant public VERSION = "2.0.0";
@@ -16,21 +21,15 @@ contract Swivel {
     bytes32 public DOMAIN;
     
     address public admin;
-    
-    struct floatingPosition {
-        address owner;
-        uint256 amount;
-        uint256 initialRate;
-        bool released;
-    }
-    
+
     struct tokenAddresses {
         address cToken;
-        address xToken;
+        address zcToken;
         address floatingMarket;
     }
-    
-    
+
+
+///MAPPINGS
 
     /// @dev maps the key of an order to a boolean indicating if an order was cancelled
     mapping (bytes32 => bool) public cancelled;
@@ -38,7 +37,7 @@ contract Swivel {
     /// @dev maps the key of an order to an amount representing its taken volume
     mapping (bytes32 => uint256) public filled;
     
-    /// @dev maps an underlying token address to the address for cToken and xToken within a given maturity
+    /// @dev maps an underlying token address to the address for cToken and zcToken within a given maturity
     mapping (address => mapping (uint256 => tokenAddresses)) public markets;
     
     /// @dev maps a specific market to a bool in order to determine wheter it has matured yet
@@ -48,8 +47,7 @@ contract Swivel {
     mapping (address => mapping (uint256 => uint256)) public maturityRate;
 
 
-
-
+///EVENTS
 
     /// @notice Emitted on floating position creation
     event InitiateFloating (bytes32 indexed key, address indexed owner);
@@ -58,109 +56,114 @@ contract Swivel {
     event Cancel (bytes32 indexed key);
     
     /// @notice Emitted on floating position release/exit
-    event ReleaseFloating (bytes32 indexed key, address indexed owner);
+    event vaultInterestRedeemed (address indexed owner, address underlying, uint256 amount);
     
     /// @notice Emitted on the creation of a new underlying&maturity market pairing
-    event newMarket(uint256 maturity, address underlying, address cToken, address xToken);
+    event newMarket(uint256 maturity, address underlying, address cToken, address zcToken);
     
     /// @notice Emitted after a market's maturity has been reached and when the `Mature` function is called
     event Matured(address underlying, uint256 maturity, uint256 timeMatured, uint256 maturityRate);
 
 
 
-
-
     /// @notice Creates domain hash for signature verification and sets admin
     constructor() {
         DOMAIN = Hash.domain(NAME, VERSION, block.chainid, address(this));
-        
+      
         admin = msg.sender;
     }
- 
- 
- 
- 
- 
- 
+
+
+///METHODS
+
+///MARKET METHODS 
     /// @notice Allows the admin to create new markets
-    /// @param name : Name of the new xToken market
-    /// @param symbol : Symbol of the new xToken market
+    /// @param name : Name of the new zcToken market
+    /// @param symbol : Symbol of the new zcToken market
     /// @param maturity : Maturity timestamp of the new market
     /// @param underlying : Underlying token address associated with the new market
     /// @param cToken : cToken address associated with underlying for the new market
-    function createMarket(string memory name, string memory symbol, uint256 maturity, address underlying, address cToken) public {
+    function createMarket(string memory name, string memory symbol, uint256 maturity, address underlying, address cToken) public  returns (bool) {
         require(msg.sender == admin, 'Only Admin');
         
-        // Create new xToken
-        address xTokenAddress = address(new xToken(maturity,underlying,name,symbol));
+        // Create new zcToken
+        address zcTokenAddress = address(new zcToken(maturity,underlying,name,symbol));
         // Create new floating side market
         address floatingMarketAddress = address(new FloatingMarket(maturity,underlying,cToken));
         
-        // Map underlying address to cToken, xToken, and floating market addresses
-        markets[underlying][maturity] = tokenAddresses(cToken,xTokenAddress,floatingMarketAddress);
+        // Map underlying address to cToken, zcToken, and floating market addresses
+        markets[underlying][maturity] = tokenAddresses(cToken,zcTokenAddress,floatingMarketAddress);
         
         // Emit new market corrosponding addresses
-        emit newMarket(maturity,underlying,cToken,xTokenAddress);
+        emit newMarket(maturity,underlying,cToken,zcTokenAddress);
+                
+        return (true);
     }
     
     
-    
-    /// @notice Can be called after maturity,allowing all of the xTokens to gain interest on Compound until they release their funds
-    /// @param underlying : Underlying token address associated with the given xToken Market
-    /// @param maturity : Maturity timestamp associated with the given xToken Market
-    function matureMarket(address underlying, uint256 maturity) public {
+    /// @notice Can be called after maturity,allowing all of the zcTokens to gain interest on Compound until they release their funds
+    /// @param underlying : Underlying token address associated with the given zcToken Market
+    /// @param maturity : Maturity timestamp associated with the given zcToken Market
+    function matureMarket(address underlying, uint256 maturity) public  returns (bool) {
         require(isMature[underlying][maturity]==false, 'Market has already matured');
         
         tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
 
         CErc20 cToken_ = CErc20(tokenAddresses_.cToken);
-        xToken xToken_ = xToken(tokenAddresses_.xToken);
+        zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
+        FloatingMarket floatingMarket_ = FloatingMarket(tokenAddresses_.floatingMarket);
         
-        require(block.timestamp >= xToken_.maturity(), "Market maturity has not yet been reached");
+        require(block.timestamp >= zcToken_.maturity(), "Market maturity has not yet been reached");
         
-        // Set the base cToken exchange rate at maturity to the current cToken exchange rate
+        // Set the base maturity cToken exchange rate at maturity to the current cToken exchange rate
         uint256 maturityRate_ = cToken_.exchangeRateCurrent();
         
         maturityRate[underlying][maturity] = maturityRate_;
         
-        // Set the maturity state to true
+        // Set Floating Market "matured" to true
+        floatingMarket_.matureMarket();
+        
+        // Set the maturity state to true (for zcb market)
         isMature[underlying][maturity] = true;
         
         emit Matured(underlying, maturity, block.timestamp, maturityRate_);
-    
+                
+        return (true);
     }
     
-    /// @notice Allows xToken holders to redeem their tokens for underlying tokens after maturity has been reached.
-    /// @param underlying : Underlying token address associated with the given xToken Market
-    /// @param maturity : Maturity timestamp associated with the given xToken Market
-    /// @param xTokenAmount : Amount of xTokens being redeemed
-    function redeemxToken(address underlying, uint256 maturity, uint256 xTokenAmount) public {
+    /// @notice Allows zcToken holders to redeem their tokens for underlying tokens after maturity has been reached.
+    /// @param underlying : Underlying token address associated with the given zcToken Market
+    /// @param maturity : Maturity timestamp associated with the given zcToken Market
+    /// @param zcTokenAmount : Amount of zcTokens being redeemed
+    function redeemzcToken(address underlying, uint256 maturity, uint256 zcTokenAmount) public  returns (bool) {
         require (isMature[underlying][maturity] == true, "Market must have matured before redemption");
         
         tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
  
-        xToken xToken_ = xToken(tokenAddresses_.xToken);
+        zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
         CErc20 cToken_ = CErc20(tokenAddresses_.cToken);
         Erc20 uToken = Erc20(underlying);
 
-        // Burn user's xTokens
-        require(xToken_.burn(msg.sender,xTokenAmount) == xTokenAmount, 'Not enough xTokens / issue with burn');
+        // Burn user's zcTokens
+        require(zcToken_.burn(msg.sender,zcTokenAmount), 'Not enough zcTokens / issue with burn');
         
         // Call internal function to determine the amount of principle to return
-        uint256 principleReturned = calculateTotalReturn(underlying, maturity, xTokenAmount);
+        uint256 principleReturned = calculateTotalReturn(underlying, maturity, zcTokenAmount);
         
         // Redeem principleReturned of underlying token to Swivel Contract from Compound 
         require(cToken_.redeemUnderlying(principleReturned) == 0 ,'cToken redemption failed');
     
         // Transfer the principleReturned in underlying tokens to the user
         require(uToken.transfer(msg.sender, principleReturned), 'Transfer of underlying token to user failed');
+                
+        return (true);
     }
     
     /// @notice Calcualtes the total amount of underlying returned including interest generated since the `matureMarket` function has been called
-    /// @param underlying : Underlying token address associated with the given xToken Market
-    /// @param maturity : Maturity timestamp associated with the given xToken Market
-    /// @param xTokenAmount : Amount of xTokens being redeemed
-    function calculateTotalReturn(address underlying, uint256 maturity, uint256 xTokenAmount) internal returns(uint256) {
+    /// @param underlying : Underlying token address associated with the given zcToken Market
+    /// @param maturity : Maturity timestamp associated with the given zcToken Market
+    /// @param amount : Amount of zcTokens being redeemed
+    function calculateTotalReturn(address underlying, uint256 maturity, uint256 amount) internal returns(uint256) {
         tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
         
         CErc20 cToken_ = CErc20(tokenAddresses_.cToken);
@@ -175,18 +178,15 @@ contract Swivel {
         uint256 residualYield = (((rateDifference * 1e26) / maturityRate_)/1e17)+1E9;
         
         // Calculate the total amount of underlying principle to return
-        uint256 totalReturned = (residualYield * xTokenAmount) / 1e9;
+        uint256 totalReturned = (residualYield * amount) / 1e9;
         
         return totalReturned; 
     }
     
     /// @notice Calculates the total amount of underlying returned including interest generated since the `matureMarket` function has been called
-    /// @param orderKey : Identifying key. Keccak of address + time + salt generated when the order was created
-    /// @param positionKey : Identifying key. Keccak of address + time + salt generated when the position was initiated
     /// @param underlying : Underlying token address associated with the given floating Market
     /// @param maturity : Maturity timestamp associated with the given floating Market
-    function redeemFloatingPosition(bytes32 orderKey, bytes32 positionKey, address underlying, uint256 maturity) public {
-        require (isMature[underlying][maturity] == true, "Market must have matured before redemption");
+    function redeemVaultInterest(address underlying, uint256 maturity, address owner) public  returns (bool) {
         
         tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
         
@@ -195,235 +195,287 @@ contract Swivel {
         Erc20 uToken = Erc20(underlying);
         
         // Call to the floating market contract to release the position and calculate the interest generated
-        uint256 interestGenerated = floatingMarket_.releasePosition(orderKey, positionKey);
+        uint256 interestGenerated = floatingMarket_.redeemInterest(msg.sender);
         
         // Redeem the interest generated by the position to Swivel Contract from Compound
         require(cToken_.redeemUnderlying(interestGenerated) == 0, "Redemption from Compound Failed");
         
-        // Determine owner. Need bug fixing to store just 1 variable
-        (address owner,uint256 amount,uint256 rate, bool released) = floatingMarket_.positions(orderKey, positionKey);
-        
         // Transfer the interest generated in underlying tokens to the user
         require(uToken.transfer(owner, interestGenerated), 'Transfer of interest generated from Swivel failed');
+                
+        return (true);
     }
     
+    
+///ORDERBOOK METHODS
+    
+    /// @param o Array of offline Swivel.Orders
+    /// @param a Array of order volume (interest) amounts relative to passed orders
+    /// @param c Array of Components from valid ECDSA signatures
+    function exitFill(Hash.Order[] calldata o, uint256[] calldata a, Sig.Components[] calldata c) public returns (bool) {
+  
+        for (uint256 i=0; i < o.length; i++) {
+            if (o[i].exit == false) {
+                if (o[i].floating == false) {
+                    require(exitFixedWithFixedInitiateOrder(o[i], a[i], c[i]));
+                }
+                else {
+                    require(exitVaultWithVaultInitiateOrder(o[i], a[i], c[i]));
+                }
+            }
+            else {
+                if (o[i].floating == false) {
+                    require(exitVaultWithFixedExitOrder(o[i], a[i], c[i]));
+                }
+                else {
+                    require(exitFixedWithVaultExitOrder(o[i], a[i], c[i]));
+                }   
+            }   
+        }
+        return true;
+    }
+    
+    
+        // a is the amount of principal filled 
+    function exitVaultWithVaultInitiateOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
+        
+        Erc20 uToken = Erc20(o.underlying);
+        FloatingMarket floatingMarket_ = FloatingMarket(markets[o.underlying][o.maturity].floatingMarket);
+        
+        require(a <= ((o.principal) - (filled[o.key])));
+        
+        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+            
+        floatingMarket_.removeUnderlying(msg.sender, a);
 
-    /// @notice Internal function to call an xToken contract and mint a user tokens
-    /// @param underlying : Underlying token address associated with the given xToken Market
-    /// @param maturity : Maturity timestamp associated with the given xToken Market
-    /// @param xTokenAmount : Amount of xTokens being minted
-    /// @param fixedSide : Address of the user that is being minted xTokens
-    function mintxToken(address underlying, uint256 maturity, uint256 xTokenAmount, address fixedSide) internal {
-        tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
+        floatingMarket_.addUnderlying(msg.sender, a);
         
-        xToken xToken_ = xToken(tokenAddresses_.xToken);
+        uToken.transferFrom(o.maker, msg.sender, interestFilled);
         
-        xToken_.mint(fixedSide,xTokenAmount);
+        filled[o.key] += a;
+        
+        //event for fixed initiation and exit
+        
+                
+        return (true);
     }
     
-    /// @notice Internal function to call an xToken contract and burn a user's tokens
-    /// @param underlying : Underlying token address associated with the given xToken Market
-    /// @param maturity : Maturity timestamp associated with the given xToken Market
-    /// @param xTokenAmount : Amount of xTokens being minted
-    function burnxToken(address underlying, uint256 maturity, uint256 xTokenAmount) internal {
-        tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
+    
+    // a is the amount in principal filled (fixed exits == floating initiates on the OB)
+    function exitVaultWithFixedExitOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
         
-        xToken xToken_ = xToken(tokenAddresses_.xToken);
+        tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
+        Erc20 uToken = Erc20(o.underlying);
+
+        require(a <= ((o.principal) - (filled[o.key])));
         
-        xToken_.burn(msg.sender,xTokenAmount);
+        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        
+        // Burn zcTokens for fixed exit party
+        zcToken(tokenAddresses_.zcToken).burn(o.maker, a);
+        
+        // Burn interest coupon for floating exit party
+        FloatingMarket(tokenAddresses_.floatingMarket).removeUnderlying(msg.sender, a);
+        
+        // Transfer cost of interest coupon to floating party
+        uToken.transferFrom(o.maker, msg.sender, interestFilled);
+        
+        // Redeem principal from compound now that coupon and zcb have been redeemed
+        require((CErc20(tokenAddresses_.cToken).redeemUnderlying(a) == 0), "Compound Redemption Error");
+        
+        // Transfer principal back to fixed exit party now that the interest coupon and zcb have been redeemed
+        uToken.transfer(o.maker, a);
+        
+        filled[o.key] += a;
+        
+        //event for fixed initiation and exit
+        return (true);
     }
     
-    /// @notice Internal function to call a floating market contract and initiate a floating position
-    /// @param orderKey : Identifying key. Keccak of address + time + salt generated when the order was created
-    /// @param positionKey : Identifying key. Keccak of address + time + salt generated when the position was initiated
-    /// @param underlying : Underlying token address associated with the given floating Market
-    /// @param maturity : Maturity timestamp associated with the given floating Market
-    function initiateFloatingPosition(bytes32 orderKey, bytes32 positionKey, address underlying, uint256 maturity, uint256 amount) internal {
-        tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
+    // a is the amount in principal filled (fixed exits == floating initiates on the OB)
+    function exitFixedWithVaultExitOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
+        
+        tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
+        Erc20 uToken = Erc20(o.underlying);
+
+        require(a <= ((o.principal) - (filled[o.key])));
+        
+        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        
+        // Burn zcTokens for fixed exit party
+        zcToken(tokenAddresses_.zcToken).burn(msg.sender, a);
+        
+        // Burn interest coupon for floating exit party
+        FloatingMarket(tokenAddresses_.floatingMarket).removeUnderlying(o.maker, a);
+        
+        // Transfer cost of interest coupon to floating party
+        uToken.transferFrom(msg.sender, o.maker, interestFilled);
+        
+        // Redeem principal from compound now that coupon and zcb have been redeemed
+        require((CErc20(tokenAddresses_.cToken).redeemUnderlying(a) == 0), "Compound Redemption Error");
+        
+        // Transfer principal back to fixed exit party now that the interest coupon and zcb have been redeemed
+        uToken.transfer(msg.sender, a);
+        
+        filled[o.key] += a;
+        
+        //event for fixed initiation and exit
+        return (true);
+    }
+    
+    // a is the amount in principal filled (fixed exits == floating initiates on the OB)
+    function exitFixedWithFixedInitiateOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
+        
+        Erc20 uToken = Erc20(o.underlying);
+
+        require(a <= ((o.principal) - (filled[o.key])));
+        
+        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        
+        // Burn zcTokens for fixed exit party
+        zcToken(markets[o.underlying][o.maturity].zcToken).transferFrom(msg.sender, o.maker, a);
+
+        // Transfer underlying from initiating party to exiting party, minus the price the exit party pays for the exit (interest).
+        uToken.transferFrom(o.maker, msg.sender, (a-interestFilled));
+        
+        filled[o.key] += a;       
+        
+        //event for fixed initiation and exit
+        
+        return (true);
+    }
+    
+    
+    
+    /// @param o Array of offline Swivel.Orders
+    /// @param a Array of order volume (principal) amounts relative to passed orders
+    /// @param c Array of Components from valid ECDSA signatures
+    function initiateFill(Hash.Order[] calldata o, uint256[] calldata a, Sig.Components[] calldata c) public returns (bool) {
+
+        for (uint256 i=0; i < o.length; i++) {
+            if (o[i].exit == false) {
+                if (o[i].floating == false) {
+                    require(initiateVaultFillingFixedInitiate(o[i], a[i], c[i]));
+                }
+                else {
+                    require(initiateFixedFillingVaultInitiate(o[i], a[i], c[i]));
+                }
+            }
+            else {
+                if (o[i].floating == false) {
+                    require(initiateFixedFillingFixedExit(o[i], a[i], c[i]));
+                }
+                else {
+                    require(initiateVaultFillingVaultExit(o[i], a[i], c[i]));
+                }
+            }
+        }
+        return true;
+    }
+    
+    function initiateFixedFillingFixedExit(Hash.Order calldata o, uint256 a, Sig.Components calldata c) internal valid(o, c) returns (bool) {
+        
+        tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
+        
+        zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
+        
+        // Checks the side, and the amount compared to amount available
+        require(a <= ((o.principal - filled[o.key])), 'taker amount > available volume');
+        
+        // .interest is interest * ratio / 1e18 where ratio is (a * 1e18) / principal
+        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+    
+        // transfer tokens to this contract
+        Erc20 uToken = Erc20(o.underlying);
+        require(uToken.transferFrom(msg.sender, o.maker, (a-interestFilled)), 'Principal transfer to exiting party failed');
+        require(zcToken_.transferFrom(o.maker, msg.sender, a), 'Zero-Coupon Token transfer failed');
+        
+        filled[o.key] += a;
+                
+        return (true);
+    }
+    
+    
+    function initiateVaultFillingVaultExit(Hash.Order calldata o, uint256 a, Sig.Components calldata c) internal valid(o, c) returns (bool) {
+        
+        tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         
         FloatingMarket floatingMarket_ = FloatingMarket(tokenAddresses_.floatingMarket);
         
-        floatingMarket_.createPosition(orderKey, positionKey, amount, msg.sender);
-    }
-    
-    /// @notice Exit a currently active floating position (While batch filling other floating-side orders)
-    /// @param orderKey : Identifying key. Keccak of address + time + salt generated when the order was created
-    /// @param positionKey : Identifying key. Keccak of address + time + salt generated when the position was initiated
-    /// @param underlying : Underlying token address associated with the given floating Market
-    /// @param maturity : Maturity timestamp associated with the given floating Market
-    function exitFloatingPosition(bytes32 orderKey, bytes32 positionKey,uint256 maturity, address underlying, uint256[] calldata a, Order[] calldata o, Sig.Components[] calldata c) public {
+        // Checks the side, and the amount compared to amount available
+        require(a <= (o.principal - filled[o.key]), 'taker amount > available volume');
         
-        FloatingMarket floatingMarket_ = FloatingMarket(markets[underlying][maturity].floatingMarket);
-    
-        (address owner, uint256 amount) = floatingMarket_.returnAmountOwner(orderKey,positionKey);
-        
-        require(owner == msg.sender, "Only position owner can exit the position");
-        
-        exitFloatingPositionLogic(positionKey, amount,maturity,underlying,a,o,c);
-    
-        redeemFloatingPosition(orderKey, positionKey, underlying, maturity);
-    }
-    
-    /// @notice Internal function to loop through each order a floating exit is filling
-    /// @param underlying : Underlying token address associated with the given floating Market
-    /// @param maturity : Maturity timestamp associated with the given floating Market
-    function exitFloatingPositionLogic(bytes32 positionKey, uint256 positionAmount, uint256 maturity, address underlying,uint256[] calldata a,Order[] calldata o, Sig.Components[] calldata c) internal {
-        
-        uint256 amountExited;
-        for (uint256 i=0; i < o.length; i++) {
-            
-            Order memory _order = o[i];
-            
-            require(_order.maturity == maturity, "Wrong Maturity");
-            require(_order.underlying == underlying, "Wrong Token");
-            require(_order.floating == true, "Wrong order side");
-            
-            // Validate order signature
-            require(_order.maker == ecrecover(
-            	keccak256(abi.encodePacked(
-            		"\x19\x01",
-            		DOMAIN,
-            		hashOrder(_order)
-            		)),
-            		c[i].v,
-            		c[i].r,
-            		c[i].s), 
-            "Invalid Signature");
-             
-            //require fill amount < = principal remaining in the order
-            require(a[i] <= ((o[i].principal) - (filled[o[i].key])));
-         
-            filled[o[i].key] += a[i];
-         
-            Erc20(underlying).transferFrom(o[i].maker, msg.sender, (((a[i] * 1e26)/o[i].principal) * o[i].interest / 1e26));
-         
-            amountExited += a[i];
-         
-            initiateFloatingPosition(o[i].key, positionKey, underlying, maturity, a[i]);
-            //event for new positions
-         
-        }
-        
-        require(amountExited == positionAmount, "Must exit entire position");
-        //event for position exit
-    }
-    
-    /// @notice Exit a currently active fixed position by selling a given number of xTokens for underlying tokens (while batch filling fixed side orders)
-    /// @param underlying : Underlying token address associated with the given floating Market
-    /// @param maturity : Maturity timestamp associated with the given floating Market
-    function exitxTokens(uint256 maturity, address underlying, uint256[] calldata a, Order[] calldata o, Sig.Components[] calldata c) public {
-        
-        xToken xToken_ = xToken(markets[underlying][maturity].xToken);
-        Erc20 uToken = Erc20(underlying);
-        
-        for (uint256 i=0; i < o.length; i++) {
-            
-            Order memory _order = o[i];
-            
-            require(_order.maturity == maturity, "Wrong Maturity");
-            require(_order.underlying == underlying, "Wrong Token");
-            require(_order.floating == false, "Wrong order side");
-            
-            // Validate order signature
-            require(_order.maker == ecrecover(
-            	keccak256(abi.encodePacked(
-            		"\x19\x01",
-            		DOMAIN,
-            		hashOrder(_order)
-            		)),
-            		c[i].v,
-            		c[i].r,
-            		c[i].s), 
-            "Invalid Signature");
-            
-            
-            //
-            uint256 principalFilled = (((a[i] * 1e26)/o[i].interest) * o[i].principal / 1e26);
-             
-            require(a[i] <= ((o[i].principal) - (filled[o[i].key])));
-            
-            filled[o[i].key] += a[i];
-            
-            xToken_.transferFrom(msg.sender,o[i].maker,principalFilled);
-            uToken.transferFrom(o[i].maker, msg.sender, principalFilled-a[i]);
-             
-            //event for fixed initiation and exit
-        }
-        
-        
-    }
-
-
-  /// @param o An offline Swivel.Order
-  /// @param a order volume (interest) amount this agreement is filling
-  /// @param orderKey:
-  /// @param positionKey:  
-  /// @param c Components of a valid ECDSA signature
-  function fillFixed(bytes32 orderKey, bytes32 positionKey, Hash.Order calldata o, uint256 a, Sig.Components calldata c) public valid(o, c) returns (bool) {
-    require(a <= (o.interest - filled[o.key]), 'taker amount > available volume');
-    require(o.floating == false, 'Order filled on wrong side');
-    // .principal is principal * ratio / 1ETH were ratio is (a * 1ETH) / interest
-    uint256 principal = o.principal * ((a * 1 ether) / o.interest) / 1 ether;
-
-
-    // transfer tokens to this contract
-    Erc20 uToken = Erc20(o.underlying);
-    require(uToken.transferFrom(msg.sender, o.maker, a), 'Interest transfer from floating to fixed failed');
-    require(uToken.transferFrom(o.maker, address(this), principal), 'Principal transfer from fixed to protocol failed');
-    
-    mintxToken(o.underlying,o.maturity,principal,o.maker);
-    
-    initiateFloatingPosition(orderKey,positionKey, o.underlying,o.maturity,principal);
-
-    
-  }
-
-  /// @param o Array of offline Swivel.Orders
-  /// @param a Array of order volume (interest) amounts relative to passed orders
-  /// @param orderKey Key for these agreements
-  /// @param c Array of Components from valid ECDSA signatures
-  function batchFillFixed(bytes32[] calldata orderKey, bytes32 positionKey, Hash.Order[] calldata o, uint256[] calldata a, Sig.Components[] calldata c) public returns (bool) {
-      
-    uint256 filled;
-    
-    for (uint256 i=0; i < o.length; i++) {
-      require(fillFixed(orderKey[i],positionKey,o[i], a[i], c[i]));     
-    }
-
-    return true;
-  }
-
-  /// @param o An offline Swivel.Order
-  /// @param a order volume (principal) amount this agreement is filling
-  /// @param orderKey Key of this new agreement
-  /// @param c Components of a valid ECDSA signature
-  function fillFloating(bytes32 orderKey, bytes32 positionKey, Hash.Order calldata o,uint256 a,Sig.Components calldata c) public valid(o, c) returns (bool) {
-    require(a <= (o.principal - filled[o.key]), 'taker amount > available volume');
-    require(o.floating == true, 'Order filled on wrong side');
-    // .interest is interest * ratio / 1ETH where ratio is (a * 1ETH) / principal
-    uint256 interest = o.interest * ((a * 1 ether) / o.principal) / 1 ether;
-
-    // transfer tokens to this contract
-    Erc20 uToken = Erc20(o.underlying);
-    require(uToken.transferFrom(o.maker, msg.sender, interest), 'Interest transfer from floating to fixed failed');
-    require(uToken.transferFrom(msg.sender, address(this), a), 'Principal transfer from fixed to protocol failed');
-
+        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
      
-    
-    initiateFloatingPosition(orderKey,positionKey,o.underlying,o.maturity,a);
-  }
-
-  /// @param o Array of offline Swivel.Order
-  /// @param a Array of order volume (principal) amounts relative to passed orders
-  /// @param orderKey Key for these agreements
-  /// @param c Array of Components from valid ECDSA signatures
-  function batchFillFloating(bytes32[] calldata orderKey, bytes32 positionKey, Hash.Order[] calldata o,uint256[] calldata  a,Sig.Components[] calldata c) public returns (bool) {
-     for (uint256 i=0; i < o.length; i++) {
-      require(fillFloating(orderKey[i], positionKey, o[i], a[i], c[i]));     
+        // transfer tokens to this contract
+        Erc20 uToken = Erc20(o.underlying);
+        require(uToken.transferFrom(msg.sender, o.maker, interestFilled), 'Premium transfer for interest coupon failed');
+        
+        floatingMarket_.removeUnderlying(o.maker, a);
+        
+        floatingMarket_.addUnderlying(msg.sender, a);
+        
+        filled[o.key] += a;
+                
+        return (true);
     }
 
-    return true;
+    /// @param o An offline Swivel.Order
+    /// @param a order volume (principal) amount this agreement is filling
+    /// @param c Components of a valid ECDSA signature
+    function initiateVaultFillingFixedInitiate(Hash.Order calldata o,uint256 a,Sig.Components calldata c) internal valid(o, c) returns (bool) {
+        
+        // Checks the side, and the amount compared to amount available
+        require(a <= (o.principal - filled[o.key]), 'taker amount > available volume');
+        
+        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        
+        // transfer tokens to this contract
+        Erc20 uToken = Erc20(o.underlying);
+        require(uToken.transferFrom(msg.sender, o.maker, interestFilled), 'Interest transfer from floating to fixed failed');
+        require(uToken.transferFrom(o.maker, address(this), a), 'Principal transfer from fixed to protocol failed');
+        
+        tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
+        
+        zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
+        
+        zcToken_.mint(msg.sender, a);
+        
+        FloatingMarket floatingMarket_ = FloatingMarket(tokenAddresses_.floatingMarket);
+        
+        floatingMarket_.addUnderlying(o.maker, a);
+        
+        filled[o.key] += a;
+        
+        return (true);
+    }
+    
+    /// @param o An offline Swivel.Order
+    /// @param a order volume (principal) amount this agreement is filling
+    /// @param c Components of a valid ECDSA signature
+    function initiateFixedFillingVaultInitiate(Hash.Order calldata o, uint256 a, Sig.Components calldata c) public valid(o, c) returns (bool) {
+        
+        // Checks the side, and the amount compared to amount available
+        require((a <= o.principal - filled[o.key]), 'taker amount > available volume');
+
+        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+    
+        // transfer tokens to this contract
+        Erc20 uToken = Erc20(o.underlying);
+        require(uToken.transferFrom(o.maker, msg.sender, interestFilled), 'Interest transfer from floating to fixed failed');
+        require(uToken.transferFrom(msg.sender, address(this), a), 'Principal transfer from fixed to protocol failed');
+        
+        tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
+        
+        zcToken(tokenAddresses_.zcToken).mint(msg.sender, a);
+        
+        FloatingMarket(tokenAddresses_.floatingMarket).addUnderlying(o.maker, a);
+        
+        filled[o.key] += a;
+        
+        return (true);
   }
+    
 
   function cancel(Hash.Order calldata o, Sig.Components calldata c) public returns (bool) {
     require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
@@ -449,43 +501,7 @@ contract Swivel {
   function redeemCToken(uint256 n,address c) internal returns (uint256) {
     return CErc20(c).redeemUnderlying(n);
   }
-
-
-
-
-
-
-    // Order Hash Schema
-    bytes32 constant ORDER_TYPEHASH = keccak256(
-    	"order(bytes32 key,address maker,address underlying,bool floating,uint256 principal,uint256 interest,uint256 maturity,uint256 expiry)"
-    );
-    
-    struct Order {
-        bytes32 key;
-        address maker;
-        address underlying;
-        bool floating;
-        uint256 principal;
-        uint256 interest;
-        uint256 maturity;
-        uint256 expiry;
-      }
       
-        /// Order Hash Function
-    /// @param _order: order struct
-    function hashOrder(Order memory _order)private pure returns(bytes32){
-    	return keccak256(abi.encode(
-    		ORDER_TYPEHASH,
-    		_order.key,
-    		_order.maker,
-    		_order.underlying,
-    		_order.floating,
-    		_order.principal,
-    		_order.interest,
-    		_order.maturity,
-    		_order.expiry
-    	));
-    }
     
   /// @dev Agreements may only be Initiated if the Order is valid.
   /// @param o An offline Swivel.Order

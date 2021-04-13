@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./Swivelv2.sol";
-
+import "../Utils/Abstracts.sol";
 
 contract FloatingMarket {
     
@@ -13,18 +13,21 @@ contract FloatingMarket {
     
     address public admin;
     
+    bool matured;
+    
+    uint256 maturityRate;
+    
     CErc20 cToken = CErc20(cTokenAddress);
     
-    mapping(bytes32 => mapping( bytes32 => position)) public positions;
+    mapping(address => floatingVault) public positions;
     
-    struct position {
-        address owner;
-        uint256 amount;
-        uint256 initialRate;
-        bool released;
+    struct floatingVault {
+        uint256 principal;
+        uint256 redeemable;
+        uint256 exchangeRate;
     }
     
-    constructor (uint256 maturity_, address underlying_, address cToken_){
+    constructor (uint256 maturity_, address underlying_, address cToken_) {
         maturity = maturity_;
         underlying = underlying_;
         cTokenAddress = cToken_;
@@ -32,39 +35,103 @@ contract FloatingMarket {
         
     }
     
-    function createPosition(bytes32 orderKey, bytes32 positionKey, uint256 amount, address user) public {
+    function addUnderlying(address owner, uint256 amount) public {
         require(msg.sender == admin, "Only Admin");
+        floatingVault memory position = positions[owner];
         
-        positions[orderKey][positionKey] = position(
-            user,
-            amount,
-            cToken.exchangeRateCurrent(),
-            false
-            );
+        if (position.principal > 0) {
             
+            uint256 interest;
         
+            // If market has matured, calculate marginal interest between the maturity rate and previous position exchange rate
+            // Otherwise, calculate marginal exchange rate between current and previous exchange rate.
+            if (matured == true) {
+                // Calculate marginal interest
+                uint256 yield = ((maturityRate * 1e26) / position.exchangeRate) - 1e26; 
+                interest = (yield * position.principal) / 1e26;
+            }
+            else {
+                // Calculate marginal interest
+                uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / position.exchangeRate) - 1e26; 
+                interest = (yield * position.principal) / 1e26;
+            }
+            
+            // Add interest and amount to position, reset cToken exchange rate
+            positions[owner].redeemable += interest;
+            positions[owner].principal += amount;
+            positions[owner].exchangeRate = cToken.exchangeRateCurrent();
+        }
+        
+        else {
+            positions[owner].principal += amount;
+            positions[owner].exchangeRate = cToken.exchangeRateCurrent();
+        }
     }
     
-    function releasePosition(bytes32 orderKey, bytes32 positionKey) public returns (uint256) {
+    function removeUnderlying(address owner, uint256 amount) public {
         require(msg.sender == admin, "Only Admin");
-        require(block.timestamp >= maturity, "Cannot release before maturity");
+        floatingVault memory position = positions[owner];
         
-        position memory position_ = positions[orderKey][positionKey];
-    
-        require(position_.released == false, "Position already released");
+        require(position.principal >= amount, "Amount exceeds vault balance");
         
-        uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / position_.initialRate) - 1e26; 
-        uint256 interest = (yield * position_.amount) / 1e26;
+       uint256 interest;
         
-        positions[orderKey][positionKey].released = true;
+        // If market has matured, calculate marginal interest between the maturity rate and previous position exchange rate
+        // Otherwise, calculate marginal exchange rate between current and previous exchange rate.
+        if (matured == true) {
+            // Calculate marginal interest
+            uint256 yield = ((maturityRate * 1e26) / position.exchangeRate) - 1e26; 
+            interest = (yield * position.principal) / 1e26;
+        }
+        else {
+            // Calculate marginal interest
+            uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / position.exchangeRate) - 1e26; 
+            interest = (yield * position.principal) / 1e26;
+        }
         
-        return interest;
-        
+        // Remove amount from position, Add interest to position, reset cToken exchange rate
+        positions[owner].redeemable += interest;
+        positions[owner].principal -= amount;
+        positions[owner].exchangeRate = cToken.exchangeRateCurrent();
     }
     
-    function returnAmountOwner(bytes32 orderKey, bytes32 positionKey) public view returns (address owner, uint256 amount) {
-        position memory position_ = positions[orderKey][positionKey];
-        return(position_.owner,position_.amount);
+    function redeemInterest(address owner) public returns(uint256 redeemAmount) {
+        require(msg.sender == admin, "Only Admin");
+        
+        floatingVault memory position = positions[owner];
+        redeemAmount = positions[owner].redeemable;
+        uint256 interest;
+        
+        // If market has matured, calculate marginal interest between the maturity rate and previous position exchange rate
+        // Otherwise, calculate marginal exchange rate between current and previous exchange rate.
+        if (matured == true) {
+            // Calculate marginal interest
+            uint256 yield = ((maturityRate * 1e26) / position.exchangeRate) - 1e26; 
+            interest = (yield * position.principal) / 1e26;
+        }
+        else {
+            // Calculate marginal interest
+            uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / position.exchangeRate) - 1e26; 
+            interest = (yield * position.principal) / 1e26;
+        }
+        // Add marginal interest to previously accrued redeemable interest
+        redeemAmount += interest;
+        
+        positions[owner].exchangeRate = cToken.exchangeRateCurrent();
+        positions[owner].redeemable = 0;
+
+        return(redeemAmount);
+    }
+    
+    function matureMarket() public {
+        require(block.timestamp >= maturity, "Maturity has not been reached.");
+        matured = true;
+        maturityRate = cToken.exchangeRateCurrent();
+    }
+    
+    
+    function returnVaultAmounts(address owner) public view returns (uint256 underlyingAmount, uint256 redeemableUnderlying) {
+        return(positions[owner].principal,positions[owner].redeemable);
     }
     
 }
