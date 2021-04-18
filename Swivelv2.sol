@@ -6,7 +6,7 @@ import '../Utils/Sig.sol';
 import '../Utils/Hash.sol';
 import '../Utils/Abstracts.sol';
 import '../zcToken.sol';
-import '../FloatingMarket.sol';
+import '../VaultTracker.sol';
 
 contract Swivel {
     
@@ -25,7 +25,7 @@ contract Swivel {
     struct tokenAddresses {
         address cToken;
         address zcToken;
-        address floatingMarket;
+        address vaultTracker;
     }
 
 
@@ -49,14 +49,8 @@ contract Swivel {
 
 ///EVENTS
 
-    /// @notice Emitted on floating position creation
-    event InitiateFloating (bytes32 indexed key, address indexed owner);
-    
     /// @notice Emitted on order cancellation
     event Cancel (bytes32 indexed key);
-    
-    /// @notice Emitted on floating position release/exit
-    event vaultInterestRedeemed (address indexed owner, address underlying, uint256 amount);
     
     /// @notice Emitted on the creation of a new underlying&maturity market pairing
     event newMarket(uint256 maturity, address underlying, address cToken, address zcToken);
@@ -84,15 +78,15 @@ contract Swivel {
     /// @param underlying : Underlying token address associated with the new market
     /// @param cToken : cToken address associated with underlying for the new market
     function createMarket(string memory name, string memory symbol, uint256 maturity, address underlying, address cToken) public  returns (bool) {
-        require(msg.sender == admin, 'Only Admin');
+        require(msg.sender == admin);
         
         // Create new zcToken
         address zcTokenAddress = address(new zcToken(maturity,underlying,name,symbol));
         // Create new floating side market
-        address floatingMarketAddress = address(new FloatingMarket(maturity,underlying,cToken));
+        address vaultTrackerAddress = address(new VaultTracker(maturity,underlying,cToken));
         
         // Map underlying address to cToken, zcToken, and floating market addresses
-        markets[underlying][maturity] = tokenAddresses(cToken,zcTokenAddress,floatingMarketAddress);
+        markets[underlying][maturity] = tokenAddresses(cToken,zcTokenAddress,vaultTrackerAddress);
         
         // Emit new market corrosponding addresses
         emit newMarket(maturity,underlying,cToken,zcTokenAddress);
@@ -101,19 +95,19 @@ contract Swivel {
     }
     
     
-    /// @notice Can be called after maturity,allowing all of the zcTokens to gain interest on Compound until they release their funds
+    /// @notice Can be called after maturity, allowing all of the zcTokens to earn floating interest on Compound until they release their funds
     /// @param underlying : Underlying token address associated with the given zcToken Market
     /// @param maturity : Maturity timestamp associated with the given zcToken Market
     function matureMarket(address underlying, uint256 maturity) public  returns (bool) {
-        require(isMature[underlying][maturity]==false, 'Market has already matured');
+        require(isMature[underlying][maturity]==false, 'Market already matured');
         
         tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
 
         CErc20 cToken_ = CErc20(tokenAddresses_.cToken);
         zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
-        FloatingMarket floatingMarket_ = FloatingMarket(tokenAddresses_.floatingMarket);
+        VaultTracker vaultTracker_ = VaultTracker(tokenAddresses_.vaultTracker);
         
-        require(block.timestamp >= zcToken_.maturity(), "Market maturity has not yet been reached");
+        require(block.timestamp >= zcToken_.maturity(), "Maturity not reached");
         
         // Set the base maturity cToken exchange rate at maturity to the current cToken exchange rate
         uint256 maturityRate_ = cToken_.exchangeRateCurrent();
@@ -121,7 +115,7 @@ contract Swivel {
         maturityRate[underlying][maturity] = maturityRate_;
         
         // Set Floating Market "matured" to true
-        floatingMarket_.matureMarket();
+        vaultTracker_.matureMarket();
         
         // Set the maturity state to true (for zcb market)
         isMature[underlying][maturity] = true;
@@ -136,7 +130,7 @@ contract Swivel {
     /// @param maturity : Maturity timestamp associated with the given zcToken Market
     /// @param zcTokenAmount : Amount of zcTokens being redeemed
     function redeemzcToken(address underlying, uint256 maturity, uint256 zcTokenAmount) public  returns (bool) {
-        require (isMature[underlying][maturity] == true, "Market must have matured before redemption");
+        require (isMature[underlying][maturity] == true, "Market not matured");
         
         tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
  
@@ -145,7 +139,7 @@ contract Swivel {
         Erc20 uToken = Erc20(underlying);
 
         // Burn user's zcTokens
-        require(zcToken_.burn(msg.sender,zcTokenAmount), 'Not enough zcTokens / issue with burn');
+        require(zcToken_.burn(msg.sender,zcTokenAmount), 'Could not burn');
         
         // Call internal function to determine the amount of principle to return
         uint256 principleReturned = calculateTotalReturn(underlying, maturity, zcTokenAmount);
@@ -154,7 +148,7 @@ contract Swivel {
         require(cToken_.redeemUnderlying(principleReturned) == 0 ,'cToken redemption failed');
     
         // Transfer the principleReturned in underlying tokens to the user
-        require(uToken.transfer(msg.sender, principleReturned), 'Transfer of underlying token to user failed');
+        require(uToken.transfer(msg.sender, principleReturned), 'Transfer of redemption failed');
                 
         return (true);
     }
@@ -183,25 +177,25 @@ contract Swivel {
         return totalReturned; 
     }
     
-    /// @notice Calculates the total amount of underlying returned including interest generated since the `matureMarket` function has been called
-    /// @param underlying : Underlying token address associated with the given floating Market
+    /// @notice Allows Vault owners to redeem any currently accrued interest within a given ____
+    /// @param underlying : Underlying token address associated with the given ____
     /// @param maturity : Maturity timestamp associated with the given floating Market
-    function redeemVaultInterest(address underlying, uint256 maturity, address owner) public  returns (bool) {
+    function redeemVaultInterest(address underlying, uint256 maturity) public  returns (bool) {
         
         tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
         
-        FloatingMarket floatingMarket_ = FloatingMarket(tokenAddresses_.floatingMarket);
+        VaultTracker vaultTracker_ = VaultTracker(tokenAddresses_.vaultTracker);
         CErc20 cToken_ = CErc20(tokenAddresses_.cToken);
         Erc20 uToken = Erc20(underlying);
         
         // Call to the floating market contract to release the position and calculate the interest generated
-        uint256 interestGenerated = floatingMarket_.redeemInterest(msg.sender);
+        uint256 interestGenerated = vaultTracker_.redeemInterest(msg.sender);
         
         // Redeem the interest generated by the position to Swivel Contract from Compound
         require(cToken_.redeemUnderlying(interestGenerated) == 0, "Redemption from Compound Failed");
         
         // Transfer the interest generated in underlying tokens to the user
-        require(uToken.transfer(owner, interestGenerated), 'Transfer of interest generated from Swivel failed');
+        require(uToken.transfer(msg.sender, interestGenerated), 'Transfer of redeemable failed');
                 
         return (true);
     }
@@ -209,46 +203,57 @@ contract Swivel {
     
 ///ORDERBOOK METHODS
     
-    /// @param o Array of offline Swivel.Orders
-    /// @param a Array of order volume (interest) amounts relative to passed orders
-    /// @param c Array of Components from valid ECDSA signatures
-    function exitFill(Hash.Order[] calldata o, uint256[] calldata a, Sig.Components[] calldata c) public returns (bool) {
+    
+    /// @notice Allows a user to exit/sell a currently held position to the marketplace.
+    /// @param : o Array of offline Swivel.Orders
+    /// @param : a Array of order volume (principal) amounts relative to passed orders
+    /// @param : c Components of a valid ECDSA signature
+    function exit(Hash.Order[] calldata o, uint256[] calldata a, Sig.Components[] calldata c) public returns (bool) {
   
         for (uint256 i=0; i < o.length; i++) {
+            // Determine whether the order being filled is an exit
             if (o[i].exit == false) {
+                // Determine whether the order being filled is a vault initiate or a zcToken initiate
                 if (o[i].floating == false) {
-                    require(exitFixedWithFixedInitiateOrder(o[i], a[i], c[i]));
+                    // If filling a zcToken initiate with an exit, one is exiting zcTokens
+                    require(exitzcTokenFillingzcTokenInitiateOrder(o[i], a[i], c[i]));
                 }
                 else {
-                    require(exitVaultWithVaultInitiateOrder(o[i], a[i], c[i]));
+                    // If filling a vault initiate with an exit, one is exiting vault notional
+                    require(exitVaultFillingVaultInitiateOrder(o[i], a[i], c[i]));
                 }
             }
             else {
+                // Determine whether the order being filled is a vault exit or zcToken exit
                 if (o[i].floating == false) {
-                    require(exitVaultWithFixedExitOrder(o[i], a[i], c[i]));
+                    // If filling a zcToken exit with an exit, one is exiting vault
+                    require(exitVaultFillingzcTokenExitOrder(o[i], a[i], c[i]));
                 }
                 else {
-                    require(exitFixedWithVaultExitOrder(o[i], a[i], c[i]));
+                    // If filling a vault exit with an exit, one is exiting zcTokens
+                    require(exitzcTokenFillingVaultExitOrder(o[i], a[i], c[i]));
                 }   
             }   
         }
         return true;
     }
     
-    
-        // a is the amount of principal filled 
-    function exitVaultWithVaultInitiateOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
+    /// @notice Allows a user to exit their Vault by filling an offline vault initiate order
+    /// @param : o The order being filled
+    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : c Components of a valid ECDSA signature
+    function exitVaultFillingVaultInitiateOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
         
         Erc20 uToken = Erc20(o.underlying);
-        FloatingMarket floatingMarket_ = FloatingMarket(markets[o.underlying][o.maturity].floatingMarket);
+        VaultTracker vaultTracker_ = VaultTracker(markets[o.underlying][o.maturity].vaultTracker);
         
         require(a <= ((o.principal) - (filled[o.key])));
         
         uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
             
-        floatingMarket_.removeUnderlying(msg.sender, a);
+        vaultTracker_.removeNotional(msg.sender, a);
 
-        floatingMarket_.addUnderlying(msg.sender, a);
+        vaultTracker_.addNotional(msg.sender, a);
         
         uToken.transferFrom(o.maker, msg.sender, interestFilled);
         
@@ -261,8 +266,11 @@ contract Swivel {
     }
     
     
-    // a is the amount in principal filled (fixed exits == floating initiates on the OB)
-    function exitVaultWithFixedExitOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
+    /// @notice Allows a user to exit their Vault filling an offline zcToken exit order
+    /// @param : o The order being filled
+    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : c Components of a valid ECDSA signature
+    function exitVaultFillingzcTokenExitOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         Erc20 uToken = Erc20(o.underlying);
@@ -275,7 +283,7 @@ contract Swivel {
         zcToken(tokenAddresses_.zcToken).burn(o.maker, a);
         
         // Burn interest coupon for floating exit party
-        FloatingMarket(tokenAddresses_.floatingMarket).removeUnderlying(msg.sender, a);
+        VaultTracker(tokenAddresses_.vaultTracker).removeNotional(msg.sender, a);
         
         // Transfer cost of interest coupon to floating party
         uToken.transferFrom(o.maker, msg.sender, interestFilled);
@@ -292,8 +300,11 @@ contract Swivel {
         return (true);
     }
     
-    // a is the amount in principal filled (fixed exits == floating initiates on the OB)
-    function exitFixedWithVaultExitOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
+    /// @notice Allows a user to exit their zcTokens by filling an offline vault exit order
+    /// @param : o The order being filled
+    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : c Components of a valid ECDSA signature
+    function exitzcTokenFillingVaultExitOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         Erc20 uToken = Erc20(o.underlying);
@@ -306,7 +317,7 @@ contract Swivel {
         zcToken(tokenAddresses_.zcToken).burn(msg.sender, a);
         
         // Burn interest coupon for floating exit party
-        FloatingMarket(tokenAddresses_.floatingMarket).removeUnderlying(o.maker, a);
+        VaultTracker(tokenAddresses_.vaultTracker).removeNotional(o.maker, a);
         
         // Transfer cost of interest coupon to floating party
         uToken.transferFrom(msg.sender, o.maker, interestFilled);
@@ -323,8 +334,11 @@ contract Swivel {
         return (true);
     }
     
-    // a is the amount in principal filled (fixed exits == floating initiates on the OB)
-    function exitFixedWithFixedInitiateOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
+    /// @notice Allows a user to exit their zcTokens by filling an offline zcToken initiate order
+    /// @param : o The order being filled
+    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : c Components of a valid ECDSA signature
+    function exitzcTokenFillingzcTokenInitiateOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
         
         Erc20 uToken = Erc20(o.underlying);
 
@@ -345,25 +359,24 @@ contract Swivel {
         return (true);
     }
     
-    
-    
-    /// @param o Array of offline Swivel.Orders
-    /// @param a Array of order volume (principal) amounts relative to passed orders
-    /// @param c Array of Components from valid ECDSA signatures
-    function initiateFill(Hash.Order[] calldata o, uint256[] calldata a, Sig.Components[] calldata c) public returns (bool) {
+    /// @notice Allows a user to initiate a position
+    /// @param : o Array of offline Swivel.Orders
+    /// @param : a Array of order volume (principal) amounts relative to passed orders
+    /// @param : c Array of Components from valid ECDSA signatures
+    function initiate(Hash.Order[] calldata o, uint256[] calldata a, Sig.Components[] calldata c) public returns (bool) {
 
         for (uint256 i=0; i < o.length; i++) {
             if (o[i].exit == false) {
                 if (o[i].floating == false) {
-                    require(initiateVaultFillingFixedInitiate(o[i], a[i], c[i]));
+                    require(initiateVaultFillingzcTokenInitiate(o[i], a[i], c[i]));
                 }
                 else {
-                    require(initiateFixedFillingVaultInitiate(o[i], a[i], c[i]));
+                    require(initiatezcTokenFillingVaultInitiate(o[i], a[i], c[i]));
                 }
             }
             else {
                 if (o[i].floating == false) {
-                    require(initiateFixedFillingFixedExit(o[i], a[i], c[i]));
+                    require(initiatezcTokenFillingzcTokenExit(o[i], a[i], c[i]));
                 }
                 else {
                     require(initiateVaultFillingVaultExit(o[i], a[i], c[i]));
@@ -373,7 +386,11 @@ contract Swivel {
         return true;
     }
     
-    function initiateFixedFillingFixedExit(Hash.Order calldata o, uint256 a, Sig.Components calldata c) internal valid(o, c) returns (bool) {
+    /// @notice Allows a user to initiate zcToken? by filling an offline zcToken exit order
+    /// @param : o The order being filled
+    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : c Components of a valid ECDSA signature  
+    function initiatezcTokenFillingzcTokenExit(Hash.Order calldata o, uint256 a, Sig.Components calldata c) internal valid(o, c) returns (bool) {
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         
@@ -387,7 +404,7 @@ contract Swivel {
     
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
-        require(uToken.transferFrom(msg.sender, o.maker, (a-interestFilled)), 'Principal transfer to exiting party failed');
+        require(uToken.transferFrom(msg.sender, o.maker, (a-interestFilled)), 'Principal transfer failed');
         require(zcToken_.transferFrom(o.maker, msg.sender, a), 'Zero-Coupon Token transfer failed');
         
         filled[o.key] += a;
@@ -395,12 +412,15 @@ contract Swivel {
         return (true);
     }
     
-    
+    /// @notice Allows a user to initiate a Vault by filling an offline vault exit order
+    /// @param : o The order being filled
+    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : c Components of a valid ECDSA signature
     function initiateVaultFillingVaultExit(Hash.Order calldata o, uint256 a, Sig.Components calldata c) internal valid(o, c) returns (bool) {
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         
-        FloatingMarket floatingMarket_ = FloatingMarket(tokenAddresses_.floatingMarket);
+        VaultTracker vaultTracker_ = VaultTracker(tokenAddresses_.vaultTracker);
         
         // Checks the side, and the amount compared to amount available
         require(a <= (o.principal - filled[o.key]), 'taker amount > available volume');
@@ -411,19 +431,20 @@ contract Swivel {
         Erc20 uToken = Erc20(o.underlying);
         require(uToken.transferFrom(msg.sender, o.maker, interestFilled), 'Premium transfer for interest coupon failed');
         
-        floatingMarket_.removeUnderlying(o.maker, a);
+        vaultTracker_.removeNotional(o.maker, a);
         
-        floatingMarket_.addUnderlying(msg.sender, a);
+        vaultTracker_.addNotional(msg.sender, a);
         
         filled[o.key] += a;
                 
         return (true);
     }
 
-    /// @param o An offline Swivel.Order
-    /// @param a order volume (principal) amount this agreement is filling
-    /// @param c Components of a valid ECDSA signature
-    function initiateVaultFillingFixedInitiate(Hash.Order calldata o,uint256 a,Sig.Components calldata c) internal valid(o, c) returns (bool) {
+    /// @notice Allows a user to initiate a Vault by filling an offline zcToken initiate order
+    /// @param : o The order being filled
+    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : c Components of a valid ECDSA signature
+    function initiateVaultFillingzcTokenInitiate(Hash.Order calldata o,uint256 a,Sig.Components calldata c) internal valid(o, c) returns (bool) {
         
         // Checks the side, and the amount compared to amount available
         require(a <= (o.principal - filled[o.key]), 'taker amount > available volume');
@@ -432,28 +453,28 @@ contract Swivel {
         
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
-        require(uToken.transferFrom(msg.sender, o.maker, interestFilled), 'Interest transfer from floating to fixed failed');
-        require(uToken.transferFrom(o.maker, address(this), a), 'Principal transfer from fixed to protocol failed');
+        require(uToken.transferFrom(msg.sender, o.maker, interestFilled), 'Premium transfer failed');
+        require(uToken.transferFrom(o.maker, address(this), a), 'Principal transfer failed');
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         
-        zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
+        uToken.approve(tokenAddresses_.cToken, a);
+        require(CErc20(tokenAddresses_.cToken).mint(a) == 0, 'Minting cTokens Failed');
         
-        zcToken_.mint(msg.sender, a);
+        zcToken(tokenAddresses_.zcToken).mint(msg.sender, a);
         
-        FloatingMarket floatingMarket_ = FloatingMarket(tokenAddresses_.floatingMarket);
-        
-        floatingMarket_.addUnderlying(o.maker, a);
+        VaultTracker(tokenAddresses_.vaultTracker).addNotional(o.maker, a);
         
         filled[o.key] += a;
         
         return (true);
     }
     
-    /// @param o An offline Swivel.Order
-    /// @param a order volume (principal) amount this agreement is filling
-    /// @param c Components of a valid ECDSA signature
-    function initiateFixedFillingVaultInitiate(Hash.Order calldata o, uint256 a, Sig.Components calldata c) public valid(o, c) returns (bool) {
+    /// @notice Allows a user to initiate a zcToken _ by filling an offline vault initiate order
+    /// @param : o The order being filled
+    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : c Components of a valid ECDSA signature
+    function initiatezcTokenFillingVaultInitiate(Hash.Order calldata o, uint256 a, Sig.Components calldata c) public valid(o, c) returns (bool) {
         
         // Checks the side, and the amount compared to amount available
         require((a <= o.principal - filled[o.key]), 'taker amount > available volume');
@@ -462,54 +483,44 @@ contract Swivel {
     
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
-        require(uToken.transferFrom(o.maker, msg.sender, interestFilled), 'Interest transfer from floating to fixed failed');
-        require(uToken.transferFrom(msg.sender, address(this), a), 'Principal transfer from fixed to protocol failed');
+        require(uToken.transferFrom(o.maker, msg.sender, interestFilled), 'Interest transfer failed');
+        require(uToken.transferFrom(msg.sender, address(this), a), 'Principal transfer failed');
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         
+        uToken.approve(tokenAddresses_.cToken, a);
+        require(CErc20(tokenAddresses_.cToken).mint(a) == 0, 'Minting cTokens Failed');
+        
         zcToken(tokenAddresses_.zcToken).mint(msg.sender, a);
         
-        FloatingMarket(tokenAddresses_.floatingMarket).addUnderlying(o.maker, a);
+        VaultTracker(tokenAddresses_.vaultTracker).addNotional(o.maker, a);
         
         filled[o.key] += a;
         
         return (true);
   }
+
+    /// @notice Allows a user to cancel an order, preventing it from being filled in the future
+    /// @param o An offline Swivel.Order
+    /// @param c Components of a valid ECDSA signature
+    function cancel(Hash.Order calldata o, Sig.Components calldata c) public returns (bool) {
+        require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
+
+        cancelled[o.key] = true;
+
+        emit Cancel(o.key);
+
+        return true;
+    }
+
     
-
-  function cancel(Hash.Order calldata o, Sig.Components calldata c) public returns (bool) {
-    require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
-
-    cancelled[o.key] = true;
-
-    emit Cancel(o.key);
-
-    return true;
-  }
-
-  /// @param u address of the underlying token contract
-  /// @param n number of token to be minted
-  function mintCToken(address u,address c, uint256 n) internal returns (uint256) {
-    Erc20 uToken = Erc20(u); 
-    // approve for n on uToken, facilitating the eventual transfer
-    require(uToken.approve(c, n), 'underlying approval failed');
-    CErc20 cToken = CErc20(c);
-    return cToken.mint(n);
-  }
-
-  /// @param n Number of underlying token to be redeemed
-  function redeemCToken(uint256 n,address c) internal returns (uint256) {
-    return CErc20(c).redeemUnderlying(n);
-  }
-      
-    
-  /// @dev Agreements may only be Initiated if the Order is valid.
-  /// @param o An offline Swivel.Order
-  /// @param c Components of a valid ECDSA signature
-  modifier valid(Hash.Order calldata o, Sig.Components calldata c) {
-    require(cancelled[o.key] == false, 'order has been cancelled');
-    require(o.expiry >= block.timestamp, 'order has expired');
-    require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
-    _;
-  }
+    /// @dev Agreements may only be Initiated if the Order is valid.
+    /// @param o An offline Swivel.Order
+    /// @param c Components of a valid ECDSA signature
+    modifier valid(Hash.Order calldata o, Sig.Components calldata c) {
+        require(cancelled[o.key] == false, 'order cancelled');
+        require(o.expiry >= block.timestamp, 'order expired');
+        require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
+        _;
+    }
 }

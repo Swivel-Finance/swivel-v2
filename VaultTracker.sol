@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "../Utils/Abstracts.sol";
 
-contract FloatingMarket {
+contract VaultTracker {
     
     uint256 public maturity;
     
@@ -19,10 +19,10 @@ contract FloatingMarket {
     
     CErc20 cToken = CErc20(cTokenAddress);
     
-    mapping(address => floatingVault) public positions;
+    mapping(address => vault) public vaults;
     
-    struct floatingVault {
-        uint256 principal;
+    struct vault {
+        uint256 notional;
         uint256 redeemable;
         uint256 exchangeRate;
     }
@@ -32,14 +32,13 @@ contract FloatingMarket {
         underlying = underlying_;
         cTokenAddress = cToken_;
         admin = msg.sender;
-        
     }
     
-    function addUnderlying(address owner, uint256 amount) public {
+    function addNotional(address owner, uint256 amount) public {
         require(msg.sender == admin, "Only Admin");
-        floatingVault memory position = positions[owner];
+        vault memory position = vaults[owner];
         
-        if (position.principal > 0) {
+        if (position.notional > 0) {
             
             uint256 interest;
         
@@ -48,31 +47,31 @@ contract FloatingMarket {
             if (matured == true) {
                 // Calculate marginal interest
                 uint256 yield = ((maturityRate * 1e26) / position.exchangeRate) - 1e26; 
-                interest = (yield * position.principal) / 1e26;
+                interest = (yield * position.notional) / 1e26;
             }
             else {
                 // Calculate marginal interest
                 uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / position.exchangeRate) - 1e26; 
-                interest = (yield * position.principal) / 1e26;
+                interest = (yield * position.notional) / 1e26;
             }
             
             // Add interest and amount to position, reset cToken exchange rate
-            positions[owner].redeemable += interest;
-            positions[owner].principal += amount;
-            positions[owner].exchangeRate = cToken.exchangeRateCurrent();
+            position.redeemable += interest;
+            position.notional += amount;
+            position.exchangeRate = cToken.exchangeRateCurrent();
         }
         
         else {
-            positions[owner].principal += amount;
-            positions[owner].exchangeRate = cToken.exchangeRateCurrent();
+            position.notional += amount;
+            position.exchangeRate = cToken.exchangeRateCurrent();
         }
     }
     
-    function removeUnderlying(address owner, uint256 amount) public {
+    function removeNotional(address owner, uint256 amount) public {
         require(msg.sender == admin, "Only Admin");
-        floatingVault memory position = positions[owner];
+        vault memory vault_ = vaults[owner];
         
-        require(position.principal >= amount, "Amount exceeds vault balance");
+        require(vault_.notional >= amount, "Amount exceeds vault balance");
         
        uint256 interest;
         
@@ -80,45 +79,45 @@ contract FloatingMarket {
         // Otherwise, calculate marginal exchange rate between current and previous exchange rate.
         if (matured == true) {
             // Calculate marginal interest
-            uint256 yield = ((maturityRate * 1e26) / position.exchangeRate) - 1e26; 
-            interest = (yield * position.principal) / 1e26;
+            uint256 yield = ((maturityRate * 1e26) / vault_.exchangeRate) - 1e26; 
+            interest = (yield * vault_.notional) / 1e26;
         }
         else {
             // Calculate marginal interest
-            uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / position.exchangeRate) - 1e26; 
-            interest = (yield * position.principal) / 1e26;
+            uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / vault_.exchangeRate) - 1e26; 
+            interest = (yield * vault_.notional) / 1e26;
         }
         
         // Remove amount from position, Add interest to position, reset cToken exchange rate
-        positions[owner].redeemable += interest;
-        positions[owner].principal -= amount;
-        positions[owner].exchangeRate = cToken.exchangeRateCurrent();
+        vault_.redeemable += interest;
+        vault_.notional -= amount;
+        vault_.exchangeRate = cToken.exchangeRateCurrent();
     }
     
     function redeemInterest(address owner) public returns(uint256 redeemAmount) {
         require(msg.sender == admin, "Only Admin");
         
-        floatingVault memory position = positions[owner];
-        redeemAmount = positions[owner].redeemable;
+        vault memory vault_ = vaults[owner];
+        redeemAmount = vault_.redeemable;
         uint256 interest;
         
         // If market has matured, calculate marginal interest between the maturity rate and previous position exchange rate
         // Otherwise, calculate marginal exchange rate between current and previous exchange rate.
         if (matured == true) {
             // Calculate marginal interest
-            uint256 yield = ((maturityRate * 1e26) / position.exchangeRate) - 1e26; 
-            interest = (yield * position.principal) / 1e26;
+            uint256 yield = ((maturityRate * 1e26) / vault_.exchangeRate) - 1e26; 
+            interest = (yield * vault_.notional) / 1e26;
         }
         else {
             // Calculate marginal interest
-            uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / position.exchangeRate) - 1e26; 
-            interest = (yield * position.principal) / 1e26;
+            uint256 yield = ((cToken.exchangeRateCurrent() * 1e26) / vault_.exchangeRate) - 1e26; 
+            interest = (yield * vault_.notional) / 1e26;
         }
         // Add marginal interest to previously accrued redeemable interest
         redeemAmount += interest;
         
-        positions[owner].exchangeRate = cToken.exchangeRateCurrent();
-        positions[owner].redeemable = 0;
+        vault_.exchangeRate = cToken.exchangeRateCurrent();
+        vault_.redeemable = 0;
 
         return(redeemAmount);
     }
@@ -131,7 +130,7 @@ contract FloatingMarket {
     
     
     function returnVaultAmounts(address owner) public view returns (uint256 underlyingAmount, uint256 redeemableUnderlying) {
-        return(positions[owner].principal,positions[owner].redeemable);
+        return(vaults[owner].notional,vaults[owner].redeemable);
     }
     
 }

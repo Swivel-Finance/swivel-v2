@@ -7,11 +7,7 @@ import "../Interfaces/IzcToken.sol";
 contract zcToken is ERC20Permit, IzcToken  {
 
     event Redeemed(address indexed from, uint256 fyDaiIn, uint256 daiOut);
-    
-    event Matured(uint256 maturityTime, uint256 maturityRate);
 
-    uint256 constant internal MAX_TIME_TO_MATURITY = 126144000; // seconds in four years
-    
     uint256 public override maturity;
     
     address public underlying;
@@ -19,8 +15,6 @@ contract zcToken is ERC20Permit, IzcToken  {
     address public admin;
 
     constructor(uint256 maturity_, address underlying_, string memory name, string memory symbol) ERC20Permit(name, symbol) {
-        
-        require(maturity_ > block.timestamp && maturity_ < block.timestamp + MAX_TIME_TO_MATURITY, "Invalid maturity");
         
         maturity = maturity_;
         
