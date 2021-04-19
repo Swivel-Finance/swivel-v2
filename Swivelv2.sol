@@ -130,27 +130,54 @@ contract Swivel {
     /// @param maturity : Maturity timestamp associated with the given zcToken Market
     /// @param zcTokenAmount : Amount of zcTokens being redeemed
     function redeemzcToken(address underlying, uint256 maturity, uint256 zcTokenAmount) public  returns (bool) {
-        require (isMature[underlying][maturity] == true, "Market not matured");
         
-        tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
+        // TODO Do we use a require here and require it to have been matured, or attempt to mature if it has not? Both require a comparison (just tested, if statement is cheaper)
+        
+        // If market hasn't matured, mature it and redeem exactly the zcTokenAmount
+        if (isMature[underlying][maturity] == false) {
+            
+            // Attempt to Mature it
+            matureMarket(underlying, maturity);
+            
+            tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
  
-        zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
-        CErc20 cToken_ = CErc20(tokenAddresses_.cToken);
-        Erc20 uToken = Erc20(underlying);
-
-        // Burn user's zcTokens
-        require(zcToken_.burn(msg.sender,zcTokenAmount), 'Could not burn');
-        
-        // Call internal function to determine the amount of principle to return
-        uint256 principleReturned = calculateTotalReturn(underlying, maturity, zcTokenAmount);
-        
-        // Redeem principleReturned of underlying token to Swivel Contract from Compound 
-        require(cToken_.redeemUnderlying(principleReturned) == 0 ,'cToken redemption failed');
+            zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
+            CErc20 cToken_ = CErc20(tokenAddresses_.cToken);
+            Erc20 uToken = Erc20(underlying);
     
-        // Transfer the principleReturned in underlying tokens to the user
-        require(uToken.transfer(msg.sender, principleReturned), 'Transfer of redemption failed');
-                
-        return (true);
+            // Burn user's zcTokens
+            require(zcToken_.burn(msg.sender, zcTokenAmount), 'Could not burn');
+            
+            // Redeem principleReturned of underlying token to Swivel Contract from Compound 
+            require(cToken_.redeemUnderlying(zcTokenAmount) == 0 ,'cToken redemption failed');
+        
+            // Transfer the principleReturned in underlying tokens to the user
+            require(uToken.transfer(msg.sender, zcTokenAmount), 'Transfer of redemption failed');
+                    
+        }
+        // If market has matured, redeem the zcTokenAmount + the marginal floating interest generated on Compound since maturity
+        else {
+            
+            tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
+     
+            zcToken zcToken_ = zcToken(tokenAddresses_.zcToken);
+            CErc20 cToken_ = CErc20(tokenAddresses_.cToken);
+            Erc20 uToken = Erc20(underlying);
+    
+            // Burn user's zcTokens
+            require(zcToken_.burn(msg.sender, zcTokenAmount), 'Could not burn');
+            
+            // Call internal function to determine the amount of principle to return (including marginal interest since maturity)
+            uint256 principleReturned = calculateTotalReturn(underlying, maturity, zcTokenAmount);
+            
+            // Redeem principleReturned of underlying token to Swivel Contract from Compound 
+            require(cToken_.redeemUnderlying(principleReturned) == 0 ,'cToken redemption failed');
+        
+            // Transfer the principleReturned in underlying tokens to the user
+            require(uToken.transfer(msg.sender, principleReturned), 'Transfer of redemption failed');
+        
+        }
+        return (true);        
     }
     
     /// @notice Calcualtes the total amount of underlying returned including interest generated since the `matureMarket` function has been called
@@ -500,27 +527,27 @@ contract Swivel {
         return (true);
   }
 
-    /// @notice Allows a user to cancel an order, preventing it from being filled in the future
-    /// @param o An offline Swivel.Order
-    /// @param c Components of a valid ECDSA signature
-    function cancel(Hash.Order calldata o, Sig.Components calldata c) public returns (bool) {
-        require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
+  /// @notice Allows a user to cancel an order, preventing it from being filled in the future
+  /// @param o An offline Swivel.Order
+  /// @param c Components of a valid ECDSA signature
+  function cancel(Hash.Order calldata o, Sig.Components calldata c) public returns (bool) {
+    require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
 
-        cancelled[o.key] = true;
+    cancelled[o.key] = true;
 
-        emit Cancel(o.key);
+    emit Cancel(o.key);
 
-        return true;
-    }
+    return true;
+  }
 
     
-    /// @dev Agreements may only be Initiated if the Order is valid.
-    /// @param o An offline Swivel.Order
-    /// @param c Components of a valid ECDSA signature
-    modifier valid(Hash.Order calldata o, Sig.Components calldata c) {
-        require(cancelled[o.key] == false, 'order cancelled');
-        require(o.expiry >= block.timestamp, 'order expired');
-        require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
-        _;
-    }
+  /// @dev Agreements may only be Initiated if the Order is valid.
+  /// @param o An offline Swivel.Order
+  /// @param c Components of a valid ECDSA signature
+  modifier valid(Hash.Order calldata o, Sig.Components calldata c) {
+    require(cancelled[o.key] == false, 'order cancelled');
+    require(o.expiry >= block.timestamp, 'order expired');
+    require(o.maker == Sig.recover(Hash.message(DOMAIN, Hash.order(o)), c), 'invalid signature');
+    _;
+  }
 }
