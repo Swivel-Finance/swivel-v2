@@ -6,8 +6,6 @@ import "../Interfaces/IzcToken.sol";
 
 contract zcToken is ERC20Permit, IzcToken  {
 
-    event Redeemed(address indexed from, uint256 fyDaiIn, uint256 daiOut);
-
     uint256 public override maturity;
     
     address public underlying;
