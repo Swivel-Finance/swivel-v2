@@ -5,7 +5,7 @@ Fixed-Maturity Markets &amp; Zero-Coupon Bond
 
 **zcToken** -- An ERC-20 Token that represents a 1-1 redeemable amount of underlying upon maturity. A zero-coupon token.
 
-**FloatingMarket** -- The contract that tracks floating side balances.
+**VaultTracker** -- The contract that tracks floating side balances.
 
 ## To Do
 
