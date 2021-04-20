@@ -44,7 +44,7 @@ library Hash {
     bytes32 key;
     address maker;
     address underlying;
-    bool floating;
+    bool vault;
     bool exit;
     uint256 principal;
     uint256 interest;
@@ -92,7 +92,7 @@ library Hash {
       o.key,
       o.maker,
       o.underlying,
-      o.floating,
+      o.vault,
       o.principal,
       o.interest,
       o.maturity,

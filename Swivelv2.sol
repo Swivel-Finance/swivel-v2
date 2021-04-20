@@ -241,7 +241,7 @@ contract Swivel {
             // Determine whether the order being filled is an exit
             if (o[i].exit == false) {
                 // Determine whether the order being filled is a vault initiate or a zcToken initiate
-                if (o[i].floating == false) {
+                if (o[i].vault == false) {
                     // If filling a zcToken initiate with an exit, one is exiting zcTokens
                     require(exitzcTokenFillingzcTokenInitiateOrder(o[i], a[i], c[i]));
                 }
@@ -252,7 +252,7 @@ contract Swivel {
             }
             else {
                 // Determine whether the order being filled is a vault exit or zcToken exit
-                if (o[i].floating == false) {
+                if (o[i].vault == false) {
                     // If filling a zcToken exit with an exit, one is exiting vault
                     require(exitVaultFillingzcTokenExitOrder(o[i], a[i], c[i]));
                 }
@@ -267,7 +267,7 @@ contract Swivel {
     
     /// @notice Allows a user to exit their Vault by filling an offline vault initiate order
     /// @param : o The order being filled
-    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : a Amount of volume (principal) being filled by the taker's exit
     /// @param : c Components of a valid ECDSA signature
     function exitVaultFillingVaultInitiateOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
         
@@ -394,7 +394,7 @@ contract Swivel {
 
         for (uint256 i=0; i < o.length; i++) {
             if (o[i].exit == false) {
-                if (o[i].floating == false) {
+                if (o[i].vault == false) {
                     require(initiateVaultFillingzcTokenInitiate(o[i], a[i], c[i]));
                 }
                 else {
@@ -402,7 +402,7 @@ contract Swivel {
                 }
             }
             else {
-                if (o[i].floating == false) {
+                if (o[i].vault == false) {
                     require(initiatezcTokenFillingzcTokenExit(o[i], a[i], c[i]));
                 }
                 else {
