@@ -280,7 +280,7 @@ contract Swivel {
             
         vaultTracker_.removeNotional(msg.sender, a);
 
-        vaultTracker_.addNotional(msg.sender, a);
+        vaultTracker_.addNotional(o.maker, a);
         
         uToken.transferFrom(o.maker, msg.sender, interestFilled);
         
@@ -329,31 +329,31 @@ contract Swivel {
     
     /// @notice Allows a user to exit their zcTokens by filling an offline vault exit order
     /// @param : o The order being filled
-    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : a Amount of volume (interest) being filled by the taker's exit
     /// @param : c Components of a valid ECDSA signature
     function exitzcTokenFillingVaultExitOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         Erc20 uToken = Erc20(o.underlying);
 
-        require(a <= ((o.principal) - (filled[o.key])));
+        require(a <= ((o.interest) - (filled[o.key])));
         
-        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        uint256 principalFilled = (((a * 1e18)/o.interest) * o.principal / 1e18);
         
         // Burn zcTokens for fixed exit party
-        zcToken(tokenAddresses_.zcToken).burn(msg.sender, a);
+        zcToken(tokenAddresses_.zcToken).burn(msg.sender, principalFilled);
         
         // Burn interest coupon for floating exit party
-        VaultTracker(tokenAddresses_.vaultTracker).removeNotional(o.maker, a);
+        VaultTracker(tokenAddresses_.vaultTracker).removeNotional(o.maker, principalFilled);
         
         // Transfer cost of interest coupon to floating party
-        uToken.transferFrom(msg.sender, o.maker, interestFilled);
+        uToken.transferFrom(msg.sender, o.maker, a);
         
         // Redeem principal from compound now that coupon and zcb have been redeemed
-        require((CErc20(tokenAddresses_.cToken).redeemUnderlying(a) == 0), "Compound Redemption Error");
+        require((CErc20(tokenAddresses_.cToken).redeemUnderlying(principalFilled) == 0), "Compound Redemption Error");
         
         // Transfer principal back to fixed exit party now that the interest coupon and zcb have been redeemed
-        uToken.transfer(msg.sender, a);
+        uToken.transfer(msg.sender, principalFilled);
         
         filled[o.key] += a;
         
@@ -363,21 +363,21 @@ contract Swivel {
     
     /// @notice Allows a user to exit their zcTokens by filling an offline zcToken initiate order
     /// @param : o The order being filled
-    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : a Amount of volume (interest) being filled by the taker's exit
     /// @param : c Components of a valid ECDSA signature
     function exitzcTokenFillingzcTokenInitiateOrder(Hash.Order calldata o, uint256 a, Sig.Components calldata c) valid(o,c) internal returns (bool) {
         
         Erc20 uToken = Erc20(o.underlying);
 
-        require(a <= ((o.principal) - (filled[o.key])));
+        require(a <= ((o.interest) - (filled[o.key])));
         
-        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        uint256 principalFilled = (((a * 1e18)/o.interest) * o.principal / 1e18);
         
         // Burn zcTokens for fixed exit party
-        zcToken(markets[o.underlying][o.maturity].zcToken).transferFrom(msg.sender, o.maker, a);
+        zcToken(markets[o.underlying][o.maturity].zcToken).transferFrom(msg.sender, o.maker, principalFilled);
 
         // Transfer underlying from initiating party to exiting party, minus the price the exit party pays for the exit (interest).
-        uToken.transferFrom(o.maker, msg.sender, (a-interestFilled));
+        uToken.transferFrom(o.maker, msg.sender, (principalFilled-a));
         
         filled[o.key] += a;       
         
@@ -416,7 +416,7 @@ contract Swivel {
     /// @notice Allows a user to initiate zcToken? by filling an offline zcToken exit order
     /// @param : o The order being filled
     /// @param : o Amount of volume (principal) being filled by the taker's exit
-    /// @param : c Components of a valid ECDSA signature  
+    /// @param : c Components of a valid ECDSA signature
     function initiatezcTokenFillingzcTokenExit(Hash.Order calldata o, uint256 a, Sig.Components calldata c) internal valid(o, c) returns (bool) {
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
@@ -441,7 +441,7 @@ contract Swivel {
     
     /// @notice Allows a user to initiate a Vault by filling an offline vault exit order
     /// @param : o The order being filled
-    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : a Amount of volume (interest) being filled by the taker's exit
     /// @param : c Components of a valid ECDSA signature
     function initiateVaultFillingVaultExit(Hash.Order calldata o, uint256 a, Sig.Components calldata c) internal valid(o, c) returns (bool) {
         
@@ -450,17 +450,17 @@ contract Swivel {
         VaultTracker vaultTracker_ = VaultTracker(tokenAddresses_.vaultTracker);
         
         // Checks the side, and the amount compared to amount available
-        require(a <= (o.principal - filled[o.key]), 'taker amount > available volume');
+        require(a <= (o.interest - filled[o.key]), 'taker amount > available volume');
         
-        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        uint256 principalFilled = (((a * 1e18)/o.interest) * o.principal / 1e18);
      
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
-        require(uToken.transferFrom(msg.sender, o.maker, interestFilled), 'Premium transfer for interest coupon failed');
+        require(uToken.transferFrom(msg.sender, o.maker, a), 'Premium transfer for interest coupon failed');
         
-        vaultTracker_.removeNotional(o.maker, a);
+        vaultTracker_.removeNotional(o.maker, principalFilled);
         
-        vaultTracker_.addNotional(msg.sender, a);
+        vaultTracker_.addNotional(msg.sender, principalFilled);
         
         filled[o.key] += a;
                 
@@ -469,28 +469,28 @@ contract Swivel {
 
     /// @notice Allows a user to initiate a Vault by filling an offline zcToken initiate order
     /// @param : o The order being filled
-    /// @param : o Amount of volume (principal) being filled by the taker's exit
+    /// @param : a Amount of volume (interest) being filled by the taker's exit
     /// @param : c Components of a valid ECDSA signature
     function initiateVaultFillingzcTokenInitiate(Hash.Order calldata o,uint256 a,Sig.Components calldata c) internal valid(o, c) returns (bool) {
         
         // Checks the side, and the amount compared to amount available
-        require(a <= (o.principal - filled[o.key]), 'taker amount > available volume');
+        require(a <= (o.interest - filled[o.key]), 'taker amount > available volume');
         
-        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        uint256 principalFilled = (((a * 1e18)/o.interest) * o.principal / 1e18);
         
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
-        require(uToken.transferFrom(msg.sender, o.maker, interestFilled), 'Premium transfer failed');
-        require(uToken.transferFrom(o.maker, address(this), a), 'Principal transfer failed');
+        require(uToken.transferFrom(msg.sender, o.maker, a), 'Premium transfer failed');
+        require(uToken.transferFrom(o.maker, address(this), principalFilled), 'Principal transfer failed');
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         
-        uToken.approve(tokenAddresses_.cToken, a);
-        require(CErc20(tokenAddresses_.cToken).mint(a) == 0, 'Minting cTokens Failed');
+        uToken.approve(tokenAddresses_.cToken, principalFilled);
+        require(CErc20(tokenAddresses_.cToken).mint(principalFilled) == 0, 'Minting cTokens Failed');
         
-        zcToken(tokenAddresses_.zcToken).mint(msg.sender, a);
+        zcToken(tokenAddresses_.zcToken).mint(msg.sender, principalFilled);
         
-        VaultTracker(tokenAddresses_.vaultTracker).addNotional(o.maker, a);
+        VaultTracker(tokenAddresses_.vaultTracker).addNotional(o.maker, principalFilled);
         
         filled[o.key] += a;
         
