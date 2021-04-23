@@ -47,7 +47,7 @@ library Hash {
     bool vault;
     bool exit;
     uint256 principal;
-    uint256 interest;
+    uint256 premium;
     uint256 maturity;
     uint256 expiry;
   }
@@ -94,7 +94,7 @@ library Hash {
       o.underlying,
       o.vault,
       o.principal,
-      o.interest,
+      o.premium,
       o.maturity,
       o.expiry
     ));

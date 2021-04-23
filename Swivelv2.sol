@@ -276,13 +276,13 @@ contract Swivel {
         
         require(a <= ((o.principal) - (filled[o.key])));
         
-        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        uint256 premiumFilled = (((a * 1e18)/o.principal) * o.premium / 1e18);
             
         vaultTracker_.removeNotional(msg.sender, a);
 
         vaultTracker_.addNotional(o.maker, a);
         
-        uToken.transferFrom(o.maker, msg.sender, interestFilled);
+        uToken.transferFrom(o.maker, msg.sender, premiumFilled);
         
         filled[o.key] += a;
         
@@ -304,7 +304,7 @@ contract Swivel {
 
         require(a <= ((o.principal) - (filled[o.key])));
         
-        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        uint256 premiumFilled = (((a * 1e18)/o.principal) * o.premium / 1e18);
         
         // Burn zcTokens for fixed exit party
         zcToken(tokenAddresses_.zcToken).burn(o.maker, a);
@@ -313,7 +313,7 @@ contract Swivel {
         VaultTracker(tokenAddresses_.vaultTracker).removeNotional(msg.sender, a);
         
         // Transfer cost of interest coupon to floating party
-        uToken.transferFrom(o.maker, msg.sender, interestFilled);
+        uToken.transferFrom(o.maker, msg.sender, premiumFilled);
         
         // Redeem principal from compound now that coupon and zcb have been redeemed
         require((CErc20(tokenAddresses_.cToken).redeemUnderlying(a) == 0), "Compound Redemption Error");
@@ -336,9 +336,9 @@ contract Swivel {
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
         Erc20 uToken = Erc20(o.underlying);
 
-        require(a <= ((o.interest) - (filled[o.key])));
+        require(a <= ((o.premium) - (filled[o.key])));
         
-        uint256 principalFilled = (((a * 1e18)/o.interest) * o.principal / 1e18);
+        uint256 principalFilled = (((a * 1e18)/o.premium) * o.principal / 1e18);
         
         // Burn zcTokens for fixed exit party
         zcToken(tokenAddresses_.zcToken).burn(msg.sender, principalFilled);
@@ -369,9 +369,9 @@ contract Swivel {
         
         Erc20 uToken = Erc20(o.underlying);
 
-        require(a <= ((o.interest) - (filled[o.key])));
+        require(a <= ((o.premium) - (filled[o.key])));
         
-        uint256 principalFilled = (((a * 1e18)/o.interest) * o.principal / 1e18);
+        uint256 principalFilled = (((a * 1e18)/o.premium) * o.principal / 1e18);
         
         // Burn zcTokens for fixed exit party
         zcToken(markets[o.underlying][o.maturity].zcToken).transferFrom(msg.sender, o.maker, principalFilled);
@@ -427,11 +427,11 @@ contract Swivel {
         require(a <= ((o.principal - filled[o.key])), 'taker amount > available volume');
         
         // .interest is interest * ratio / 1e18 where ratio is (a * 1e18) / principal
-        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        uint256 premiumFilled = (((a * 1e18)/o.principal) * o.premium / 1e18);
     
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
-        require(uToken.transferFrom(msg.sender, o.maker, (a-interestFilled)), 'Principal transfer failed');
+        require(uToken.transferFrom(msg.sender, o.maker, (a-premiumFilled)), 'Principal transfer failed');
         require(zcToken_.transferFrom(o.maker, msg.sender, a), 'Zero-Coupon Token transfer failed');
         
         filled[o.key] += a;
@@ -450,9 +450,9 @@ contract Swivel {
         VaultTracker vaultTracker_ = VaultTracker(tokenAddresses_.vaultTracker);
         
         // Checks the side, and the amount compared to amount available
-        require(a <= (o.interest - filled[o.key]), 'taker amount > available volume');
+        require(a <= (o.premium - filled[o.key]), 'taker amount > available volume');
         
-        uint256 principalFilled = (((a * 1e18)/o.interest) * o.principal / 1e18);
+        uint256 principalFilled = (((a * 1e18)/o.premium) * o.principal / 1e18);
      
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
@@ -474,9 +474,9 @@ contract Swivel {
     function initiateVaultFillingzcTokenInitiate(Hash.Order calldata o,uint256 a,Sig.Components calldata c) internal valid(o, c) returns (bool) {
         
         // Checks the side, and the amount compared to amount available
-        require(a <= (o.interest - filled[o.key]), 'taker amount > available volume');
+        require(a <= (o.premium - filled[o.key]), 'taker amount > available volume');
         
-        uint256 principalFilled = (((a * 1e18)/o.interest) * o.principal / 1e18);
+        uint256 principalFilled = (((a * 1e18)/o.premium) * o.principal / 1e18);
         
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
@@ -506,11 +506,11 @@ contract Swivel {
         // Checks the side, and the amount compared to amount available
         require((a <= o.principal - filled[o.key]), 'taker amount > available volume');
 
-        uint256 interestFilled = (((a * 1e18)/o.principal) * o.interest / 1e18);
+        uint256 premiumFilled = (((a * 1e18)/o.principal) * o.premium / 1e18);
     
         // transfer tokens to this contract
         Erc20 uToken = Erc20(o.underlying);
-        require(uToken.transferFrom(o.maker, msg.sender, interestFilled), 'Interest transfer failed');
+        require(uToken.transferFrom(o.maker, msg.sender, premiumFilled), 'Interest transfer failed');
         require(uToken.transferFrom(msg.sender, address(this), a), 'Principal transfer failed');
         
         tokenAddresses memory tokenAddresses_ = markets[o.underlying][o.maturity];
