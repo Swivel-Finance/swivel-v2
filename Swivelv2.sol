@@ -77,7 +77,7 @@ contract Swivel {
     /// @param maturity : Maturity timestamp of the new market
     /// @param underlying : Underlying token address associated with the new market
     /// @param cToken : cToken address associated with underlying for the new market
-    function createMarket(string memory name, string memory symbol, uint256 maturity, address underlying, address cToken) public  returns (bool) {
+    function createMarketWindow(string memory name, string memory symbol, uint256 maturity, address underlying, address cToken) public  returns (bool) {
         require(msg.sender == admin);
         
         // Create new zcToken
@@ -98,7 +98,7 @@ contract Swivel {
     /// @notice Can be called after maturity, allowing all of the zcTokens to earn floating interest on Compound until they release their funds
     /// @param underlying : Underlying token address associated with the given zcToken Market
     /// @param maturity : Maturity timestamp associated with the given zcToken Market
-    function matureMarket(address underlying, uint256 maturity) public  returns (bool) {
+    function matureMarketWindow(address underlying, uint256 maturity) public  returns (bool) {
         require(isMature[underlying][maturity]==false, 'Market already matured');
         
         tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
@@ -137,7 +137,7 @@ contract Swivel {
         if (isMature[underlying][maturity] == false) {
             
             // Attempt to Mature it
-            matureMarket(underlying, maturity);
+            matureMarketWindow(underlying, maturity);
             
             tokenAddresses memory tokenAddresses_ = markets[underlying][maturity];
  
@@ -155,6 +155,7 @@ contract Swivel {
             require(uToken.transfer(msg.sender, zcTokenAmount), 'Transfer of redemption failed');
                     
         }
+        
         // If market has matured, redeem the zcTokenAmount + the marginal floating interest generated on Compound since maturity
         else {
             
