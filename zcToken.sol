@@ -3,7 +3,7 @@
 pragma solidity 0.8.4;
 
 import "./Erc20.sol";
-import "./IZcToken.sol";
+import "../Interfaces/IZcToken.sol";
 
 contract ZcToken is Erc20, IZcToken {
   address public admin;
