@@ -2,10 +2,10 @@
 
 pragma solidity 0.8.4;
 
-import "./Erc20.sol";
+import "../ERC/ERC20Permit.sol";
 import "../Interfaces/IZcToken.sol";
 
-contract ZcToken is Erc20, IZcToken {
+contract zcToken is ERC20Permit, IZcToken {
   address public admin;
   address public underlying;
   uint256 public maturity;
