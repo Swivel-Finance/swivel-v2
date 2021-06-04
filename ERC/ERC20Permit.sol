@@ -2,8 +2,8 @@
 // Adapted from https://github.com/OpenZeppelin/openzeppelin-contracts/blob/53516bc555a454862470e7860a9b5254db4d00f5/contracts/token/ERC20/ERC20Permit.sol
 pragma solidity ^0.8.4;
 
-import "../ERC/ERC20.sol";
-import "../Interfaces/IERC2612.sol";
+import "../ERC/Erc20.sol";
+import "../Interfaces/IErc2612.sol";
 
 /**
  * @dev Extension of {ERC20} that allows token holders to use their tokens
@@ -13,7 +13,7 @@ import "../Interfaces/IERC2612.sol";
  *
  * The {permit} signature mechanism conforms to the {IERC2612} interface.
  */
-contract ERC20Permit is ERC20, IERC2612 {
+contract Erc20Permit is Erc20, IErc2612 {
     mapping (address => uint256) public override nonces;
 
     bytes32 public immutable PERMIT_TYPEHASH = keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Added fluff to force name capitalization refresh
+
 pragma solidity 0.8.4;
 
-import "../ERC/ERC20Permit.sol";
+import "../ERC/Erc20Permit.sol";
 import "../Interfaces/IZcToken.sol";
 
-contract zcToken is ERC20Permit, IZcToken {
+contract ZcToken is Erc20Permit, IZcToken {
   address public admin;
   address public underlying;
   uint256 public maturity;
