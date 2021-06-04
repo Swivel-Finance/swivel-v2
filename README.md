@@ -3,7 +3,7 @@ Fixed-Maturity Markets &amp; Zero-Coupon Bond
 
 **Swivel** -- Manages order execution logic and custodies funds/deposits into underlying money-markets.
 
-**Marketplace** -- Acts as a factory for given asset-maturity market pairs. Marketplace contains information on zcToken and Vault contracts, and controls the minting/burning of `zcToken` or Vault `Notional` balance according to functions sent from Swivel.
+**Marketplace** -- Acts as a factory for given asset-maturity market pairs (zcTokens and Vaults). Marketplace contains information on zcToken and Vault contracts, and controls the minting/burning of `zcToken` or Vault `Notional` balance according to functions sent from Swivel.
 
 **zcToken** -- ERC-20 Token that represents a 1-1 redeemable amount of underlying upon maturity. A zero-coupon token.
 
