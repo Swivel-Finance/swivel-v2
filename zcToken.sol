@@ -1,36 +1,42 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
 
-import "../ERC/ERC20Permit.sol";
-import "../Interfaces/IzcToken.sol";
+pragma solidity 0.8.4;
 
-contract zcToken is ERC20Permit, IzcToken  {
+import "./Erc20.sol";
+import "./IZcToken.sol";
 
-    uint256 public override maturity;
-    
-    address public underlying;
-    
-    address public admin;
+contract ZcToken is Erc20, IZcToken {
+  address public admin;
+  address public underlying;
+  uint256 public maturity;
 
-    constructor(uint256 maturity_, address underlying_, string memory name, string memory symbol) ERC20Permit(name, symbol) {
-        
-        maturity = maturity_;
-        
-        underlying = underlying_;
-        
-        admin = msg.sender;
-    }
-    
-    function burn(address from, uint256 zcTokenAmount) external override returns(bool) {
-        require(msg.sender == admin);
-        _burn(from, zcTokenAmount);
-        return(true);
-    }
+  /// @param u Underlying
+  /// @param m Maturity
+  /// @param n Name
+  /// @param s Symbol
+  constructor(address u, uint256 m, string memory n, string memory s) Erc20(n, s) {
+      underlying = u;
+      maturity = m;
+      admin = msg.sender;
+  }
+  
+  /// @param f From
+  /// @param a Amount
+  function burn(address f, uint256 a) external onlyAdmin(admin) override returns(bool) {
+      _burn(f, a);
+      return true;
+  }
 
-    function mint(address to, uint256 fyDaiAmount) public override returns(bool) {
-        require(msg.sender == admin);
-        _mint(to, fyDaiAmount);
-        return(true);
-    }
+  /// @param t To
+  /// @param a Amount
+  function mint(address t, uint256 a) external onlyAdmin(admin) override returns(bool) {
+      _mint(t, a);
+      return true;
+  }
 
+  /// @param a Admin address
+  modifier onlyAdmin(address a) {
+    require(msg.sender == a, 'sender must be admin');
+    _;
+  }
 }

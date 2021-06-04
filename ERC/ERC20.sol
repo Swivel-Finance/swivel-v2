@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Inspired on token.sol from DappHub
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 import "../Interfaces/IERC20.sol";
 
 

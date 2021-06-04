@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
-pragma solidity 0.8.0;
+pragma solidity 0.8.4;
 
 /**
   @notice Encapsulation of the logic to produce EIP712 hashed domain and messages.
@@ -19,7 +19,6 @@ library Hash {
   //     'address verifyingContract',
   //     ')'
   // ));
-  //Todo Recalculate
   bytes32 constant internal DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
 
   // EIP712 typeHash of an Order 
@@ -28,16 +27,15 @@ library Hash {
   //     'bytes32 key,',
   //     'address maker,',
   //     'address underlying,',
-  //     'bool floating,',
-  //     'uint256 amount,',
-  //     'uint256 price,',
+  //     'bool vault,',
+  //     'bool exit,',
+  //     'uint256 principal,',
+  //     'uint256 premium,',
   //     'uint256 maturity,',
   //     'uint256 expiry',
-  //     'bool exit'
   //     ')'
   // ));
-  //Todo Recalculate
-  bytes32 constant internal ORDER_TYPEHASH = 0xa3c680804aa3dc3cf9b923a1d0d8b699fcdf013624a69077d1fe6673a236562a;
+  bytes32 constant internal ORDER_TYPEHASH = 0x7ddd38ab5ed1c16b61ca90eeb9579e29da1ba821cf42d8cdef8f30a31a6a4146;
 
   /// @dev struct represents the attributes of an offchain Swivel.Order
   struct Order {
@@ -93,6 +91,7 @@ library Hash {
       o.maker,
       o.underlying,
       o.vault,
+      o.exit,
       o.principal,
       o.premium,
       o.maturity,

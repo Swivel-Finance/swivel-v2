@@ -1,15 +1,22 @@
-  
-// SPDX-License-Identifier: GPL-3.0-or-later
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
 
-import "../Interfaces/IERC20.sol";
-import "../Interfaces/IERC2612.sol";
+pragma solidity 0.8.4;
 
-interface IzcToken is IERC20, IERC2612 {
-    function maturity() external view returns(uint);
-    function mint(address, uint) external returns(bool);
-    function burn(address, uint) external returns(bool);
-    // function transfer(address, uint) external returns (bool);
-    // function transferFrom(address, address, uint) external returns (bool);
-    // function approve(address, uint) external returns (bool);
+import "./IErc20Metadata.sol";
+import "./IErc20.sol";
+
+/**
+ * @dev Mint and burn interface for the ZCToken
+ *
+ */
+interface IZcToken is IErc20, IErc20Metadata {
+    /**
+     * @dev Mints...
+     */
+    function mint(address, uint256) external returns(bool);
+
+    /**
+     * @dev Burns...
+     */
+    function burn(address, uint256) external returns(bool);
 }
