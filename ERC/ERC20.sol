@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.4;
 
-import "./IPErc20.sol";
+import "../Interfaces/IPErc20.sol";
 
 /**
  * @dev Implementation of the {IERC20} interface.
