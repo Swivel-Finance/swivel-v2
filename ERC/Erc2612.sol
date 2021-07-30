@@ -4,7 +4,7 @@
 pragma solidity 0.8.4;
 
 import '../Utils/HashPermit.sol';
-import './ERC20.sol';
+import './PErc20.sol';
 import '../Interfaces/IErc2612.sol';
 
 /**
