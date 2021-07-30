@@ -2,11 +2,11 @@
 
 pragma solidity 0.8.4;
 
-import "../ERC/ERC2612.sol";
+import "../ERC/Erc2612.sol";
 import "../Interfaces/IZcToken.sol";
 
 /// NOTE the OZStlye naming conventions are kept for the OZ dependencies
-contract ZcToken is ERC2612, IZcToken {
+contract ZcToken is Erc2612, IZcToken {
   address public admin;
   address public underlying;
   uint256 public maturity;
@@ -15,7 +15,7 @@ contract ZcToken is ERC2612, IZcToken {
   /// @param m Maturity
   /// @param n Name
   /// @param s Symbol
-  constructor(address u, uint256 m, string memory n, string memory s) ERC2612(n, s) {
+  constructor(address u, uint256 m, string memory n, string memory s) Erc2612(n, s) {
       underlying = u;
       maturity = m;
       admin = msg.sender;
