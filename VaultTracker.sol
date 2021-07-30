@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.4;
 
-import "./Utils/Abstracts.sol";
+import "../Utils/Abstracts.sol";
 
 contract VaultTracker {
   struct Vault {

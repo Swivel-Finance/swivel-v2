@@ -7,7 +7,7 @@ pragma solidity 0.8.4;
   Also to produce / verify hashed and signed Permits.
 */
 
-library Hash {
+library HashPermit {
   // EIP712 Domain Separator typeHash
   // keccak256(abi.encodePacked(
   //     'EIP712Domain(',

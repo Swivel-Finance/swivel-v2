@@ -6,7 +6,7 @@
 
 pragma solidity 0.8.4;
 
-import './Utils/MarketplaceAbstracts.sol';
+import '../Utils/MarketplaceAbstracts.sol';
 import './ZcToken.sol';
 import './VaultTracker.sol';
 

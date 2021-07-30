@@ -24,7 +24,7 @@ contract Erc2612 is PErc20, IErc2612 {
   /// @param n name for the token
   /// @param s symbol for the token
   constructor(string memory n, string memory s) PErc20(n, s) {
-    DOMAIN = Hash.domain(n, '1', block.chainid, address(this));
+    DOMAIN = HashPermit.domain(n, '1', block.chainid, address(this));
   }
 
   /**
@@ -42,8 +42,8 @@ contract Erc2612 is PErc20, IErc2612 {
   function permit(address o, address spender, uint256 a, uint256 d, uint8 v, bytes32 r, bytes32 s) public virtual override {
     require(d >= block.timestamp, 'erc2612 expired deadline');
 
-    bytes32 hashStruct = Hash.permit(o, spender, a, nonces[o]++, d);
-    bytes32 hash = Hash.message(DOMAIN, hashStruct); 
+    bytes32 hashStruct = HashPermit.permit(o, spender, a, nonces[o]++, d);
+    bytes32 hash = HashPermit.message(DOMAIN, hashStruct); 
     address signer = ecrecover(hash, v, r, s);
 
     require(signer != address(0) && signer == o, 'erc2612 invalid signature');
