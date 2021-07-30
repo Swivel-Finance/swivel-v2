@@ -2,8 +2,8 @@
 
 pragma solidity 0.8.4;
 
-import "../ERC/ERC2612.sol";
-import "../Interfaces/IZcToken.sol";
+import "./ERC/Erc2612.sol";
+import "./Interfaces/IZcToken.sol";
 
 /// NOTE the OZStlye naming conventions are kept for the OZ dependencies
 contract ZcToken is ERC2612, IZcToken {

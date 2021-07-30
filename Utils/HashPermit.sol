@@ -7,7 +7,7 @@ pragma solidity 0.8.4;
   Also to produce / verify hashed and signed Permits.
 */
 
-library HashPermit {
+library Hash {
   // EIP712 Domain Separator typeHash
   // keccak256(abi.encodePacked(
   //     'EIP712Domain(',
@@ -35,7 +35,9 @@ library HashPermit {
   /// @param version EIP712 semantic version string
   /// @param i Chain ID
   /// @param verifier address of the verifying contract
-  function domain(string memory n, string memory version, uint256 i, address verifier) internal pure returns (bytes32 hash) {
+  function domain(string memory n, string memory version, uint256 i, address verifier) internal pure returns (bytes32) {
+    bytes32 hash;
+
     assembly {
       let nameHash := keccak256(add(n, 32), mload(n))
       let versionHash := keccak256(add(version, 32), mload(version))
@@ -47,12 +49,15 @@ library HashPermit {
       mstore(add(pointer, 128), verifier)
       hash := keccak256(pointer, 160)
     }
+
     return hash;
   }
 
   /// @param d Type hash of the domain separator (see Hash.domain)
   /// @param h EIP712 hash struct (Permit for example)
-  function message(bytes32 d, bytes32 h) internal pure returns (bytes32 hash) {
+  function message(bytes32 d, bytes32 h) internal pure returns (bytes32) {
+    bytes32 hash;
+
     assembly {
       let pointer := mload(64)
       mstore(pointer, 0x1901000000000000000000000000000000000000000000000000000000000000)
@@ -60,6 +65,7 @@ library HashPermit {
       mstore(add(pointer, 34), h)
       hash := keccak256(pointer, 66)
     }
+
     return hash;
   }
 
